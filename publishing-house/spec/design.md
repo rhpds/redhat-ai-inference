@@ -62,12 +62,12 @@ Intermediate
 
 ## Infrastructure Requirements
 
-- **Cloud provider:** TBD — confirmed in infrastructure phase
-- **Cluster type:** TBD — confirmed in infrastructure phase
-- **OCP version:** TBD — confirmed in infrastructure phase
-- **Topology:** TBD — confirmed in infrastructure phase
-- **Sizing:** TBD — confirmed in infrastructure phase
+- **Cloud provider:** CNV
+- **Cluster type:** Multinode — 3 control plane (16 vCPU, 64GB RAM), 2 workers (16 vCPU, 64GB RAM, 100GB disk)
+- **OCP version:** 4.20
+- **Topology:** Shared-cluster
+- **Sizing:** 3 control plane nodes + 2 worker nodes + 1 GPU node (NVIDIA L40)
 - **Automation approach:** GitOps (Helm + ArgoCD)
-- **AI/MaaS:** TBD — confirmed in infrastructure phase
-- **External services:** TBD — confirmed in infrastructure phase
-- **Non-GA products:** TBD — confirmed in infrastructure phase
+- **AI/MaaS:** GPU — attendees deploy and serve a model on-cluster; open-source model (TBD)
+- **External services:** registry.redhat.io, quay.io
+- **Non-GA products:** None (all products are GA)
