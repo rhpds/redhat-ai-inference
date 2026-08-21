@@ -56,7 +56,7 @@ spec:
       status: not_started
   environment:
     platform: "ocp"            # ocp | rhel-vms — determines which sizing fields apply
-    topology: "shared-cluster" # shared-cluster | per-student | cnv-pool
+    topology: "per-student"    # shared-cluster | per-student | cnv-pool
     cloud_provider: cnv        # cnv | aws | troshka — cnv is default
     max_concurrent_users: null # required if topology = shared-cluster
 

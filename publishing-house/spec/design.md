@@ -65,7 +65,7 @@ Intermediate
 - **Cloud provider:** CNV
 - **Cluster type:** Multinode — 3 control plane (16 vCPU, 64GB RAM), 2 workers (16 vCPU, 64GB RAM, 100GB disk)
 - **OCP version:** 4.22
-- **Topology:** Shared-cluster
+- **Topology:** Per-student
 - **Sizing:** 3 control plane nodes + 2 worker nodes + 1 GPU node (NVIDIA L40)
 - **Automation approach:** GitOps (Helm + ArgoCD)
 - **AI/MaaS:** GPU — attendees deploy and serve a model on-cluster; open-source model (TBD)
