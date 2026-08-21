@@ -113,8 +113,20 @@ approval_checklist:
     prerequisites_verifiable: false
     assessment_strategy: ""
     catalog_gap: "Covers the explicit lifecycle progression from individual model deployment through EvalHub-based evaluation to shared Model-as-a-Service — no existing catalog item covers EvalHub or this end-to-end inference lifecycle arc."
-    design_overview: ""
-    module_summaries: []
+    design_overview: "This lab targets AI engineers, platform engineers, and AI operations teams who need to move beyond model deployment into production-grade serving. Attendees take a model through the full inference lifecycle on Red Hat AI Enterprise — from deployment and EvalHub evaluation through Model-as-a-Service exposure, application integration, and observability."
+    module_summaries:
+      - title: "Deploy a Model on Red Hat AI Enterprise"
+        overview: "Attendees deploy a model for inference on Red Hat AI Enterprise, configuring the model server and verifying it accepts requests."
+      - title: "Evaluate and Benchmark Model Performance with EvalHub"
+        overview: "Attendees use EvalHub to benchmark the deployed model's inference performance and configure a repeatable evaluation workflow for tracking changes over time."
+      - title: "Expose the Model as a Model-as-a-Service"
+        overview: "Attendees configure the deployed model as a shared Model-as-a-Service with access controls, API endpoints, and scaling policies."
+      - title: "Integrate the Model into an Application"
+        overview: "Attendees connect a sample application to the MaaS endpoint using standard API patterns and observe inference responses flowing through the integration."
+      - title: "Validate the End-to-End Workflow"
+        overview: "Attendees trace a request from application through MaaS to model, troubleshoot a simulated failure, and confirm end-to-end reliability."
+      - title: "Monitor Model Performance through Observability"
+        overview: "Attendees explore the observability dashboard, monitor serving metrics under load, and analyze performance trends that inform scaling decisions."
     rcars_overlap_pct: 90
     rcars_top_matches:
       - title: "Private Model as a Service - A Practical Guide to Red Hat AI"
