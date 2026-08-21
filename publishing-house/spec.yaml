@@ -16,8 +16,8 @@ project:
   automation_type: "gitops"
   description: "A hands-on workshop experience taking attendees through the full inference lifecycle from model selection to large scale deployment."
   # content_reviewer_email and infra_reviewer_email are assigned by the RHDP team — not set by the author
-  jira_ticket: ""
-  workflow_id: ""
+  jira_ticket: "RHDPCD-1180"
+  workflow_id: "5e859ef1-f24e-48ca-aa2b-7a4967ee08e3"
 
 spec:
   title: ""
