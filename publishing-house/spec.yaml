@@ -21,8 +21,39 @@ project:
 
 spec:
   title: "From Model to Model as a Service: Building Scalable AI Inference"
-  learning_objectives: []
-  modules: []              # [{id, title, duration_min}] — written by intake Phase 4; id is stable (e.g. module-01)
+  learning_objectives:
+    - "Deploy a model for inference on Red Hat AI Enterprise"
+    - "Analyze model inference performance using EvalHub benchmarking tools"
+    - "Configure a repeatable evaluation workflow for tracking model performance over time"
+    - "Configure a deployed model as a Model-as-a-Service for shared, scalable consumption"
+    - "Integrate a model service into an application using standard API patterns"
+    - "Verify end-to-end request flow from application request to model response"
+    - "Monitor model serving metrics through the observability dashboard"
+  modules:
+    - id: module-01
+      title: "Deploy a Model on Red Hat AI Enterprise"
+      duration_min: 20
+      status: not_started
+    - id: module-02
+      title: "Evaluate and Benchmark Model Performance with EvalHub"
+      duration_min: 20
+      status: not_started
+    - id: module-03
+      title: "Expose the Model as a Model-as-a-Service"
+      duration_min: 20
+      status: not_started
+    - id: module-04
+      title: "Integrate the Model into an Application"
+      duration_min: 20
+      status: not_started
+    - id: module-05
+      title: "Validate the End-to-End Workflow"
+      duration_min: 20
+      status: not_started
+    - id: module-06
+      title: "Monitor Model Performance through Observability"
+      duration_min: 20
+      status: not_started
   environment:
     platform: ""               # ocp | rhel-vms — determines which sizing fields apply
     topology: ""               # shared-cluster | per-student | cnv-pool
@@ -79,7 +110,7 @@ tracking:
 approval_checklist:
 
   content:
-    prerequisites_verifiable: null
+    prerequisites_verifiable: false
     assessment_strategy: ""
     catalog_gap: ""
     design_overview: ""
