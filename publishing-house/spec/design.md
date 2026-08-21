@@ -10,19 +10,18 @@ In this hands-on lab, attendees take a model through the full serving lifecycle 
 
 - **Role:** AI engineers, platform engineers, AI operations teams
 - **Experience level:** Intermediate
-- **What they already know:** Basic OpenShift/Kubernetes concepts, familiarity with ML model concepts (training vs. inference), command-line comfort
+- **What they already know:** Basic OpenShift/Kubernetes concepts, familiarity with AI model concepts (training vs. inference)
 - **What they don't know:** How to move from a deployed model to a production-grade, shared AI service on Red Hat AI Enterprise
 
 ## Prerequisites
 
 - Basic understanding of containers and Kubernetes/OpenShift
-- Familiarity with machine learning model concepts (what a model is, what inference means)
-- Can the lab validate these automatically? No — trust-based; assumed from audience profile
+- Familiarity with generative AI model concepts (what a model is, what inference means)
 
 ## Learning Objectives
 
 1. Deploy a model for inference on Red Hat AI Enterprise
-2. Analyze model inference performance using EvalHub benchmarking tools
+2. Analyze model inference performance using EvalHub for evaluations
 3. Configure a repeatable evaluation workflow for tracking model performance over time
 4. Configure a deployed model as a Model-as-a-Service for shared, scalable consumption
 5. Integrate a model service into an application using standard API patterns
@@ -35,21 +34,21 @@ Lab (hands-on)
 
 ## Products & Technologies
 
-- Red Hat AI Enterprise (including EvalHub)
+- Red Hat AI Enterprise (includes OpenShift and OpenShift AI)
 
 ## Module Map
 
 | Module | Title | Duration |
 |--------|-------|----------|
-| 1 | Deploy a Model on Red Hat AI Enterprise | 20 min |
+| 1 | Deploy a Model on Red Hat AI Enterprise | 10 min |
 | 2 | Evaluate and Benchmark Model Performance with EvalHub | 20 min |
 | 3 | Expose the Model as a Model-as-a-Service | 20 min |
 | 4 | Integrate the Model into an Application | 20 min |
 | 5 | Validate the End-to-End Workflow | 20 min |
 | 6 | Monitor Model Performance through Observability | 20 min |
-| — | **Total hands-on** | **2 hours** |
+| — | **Total hands-on** | **1 hour and 50 minutes** |
 | — | Intro / presentation | ~10 min |
-| — | **Total lab** | **~2 hours 10 min** |
+| — | **Total lab** | **~2 hours** |
 
 ## Difficulty Level
 
@@ -57,7 +56,7 @@ Intermediate
 
 ## Environment
 
-**Learner view:** A Red Hat AI Enterprise environment with access to a model repository. No models are pre-deployed — attendees start from scratch and build up through the serving lifecycle.
+**Learner view:** A Red Hat AI Enterprise environment. No models are pre-deployed — attendees start from scratch and build up through the serving lifecycle.
 
 **Automation needed:** TBD — confirmed in infrastructure phase
 

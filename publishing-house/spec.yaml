@@ -23,7 +23,7 @@ spec:
   title: "From Model to Model as a Service: Building Scalable AI Inference"
   learning_objectives:
     - "Deploy a model for inference on Red Hat AI Enterprise"
-    - "Analyze model inference performance using EvalHub benchmarking tools"
+    - "Analyze model inference performance using EvalHub for evaluations"
     - "Configure a repeatable evaluation workflow for tracking model performance over time"
     - "Configure a deployed model as a Model-as-a-Service for shared, scalable consumption"
     - "Integrate a model service into an application using standard API patterns"
@@ -32,7 +32,7 @@ spec:
   modules:
     - id: module-01
       title: "Deploy a Model on Red Hat AI Enterprise"
-      duration_min: 20
+      duration_min: 10
       status: not_started
     - id: module-02
       title: "Evaluate and Benchmark Model Performance with EvalHub"
