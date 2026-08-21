@@ -112,11 +112,71 @@ approval_checklist:
   content:
     prerequisites_verifiable: false
     assessment_strategy: ""
-    catalog_gap: ""
+    catalog_gap: "Covers the explicit lifecycle progression from individual model deployment through EvalHub-based evaluation to shared Model-as-a-Service — no existing catalog item covers EvalHub or this end-to-end inference lifecycle arc."
     design_overview: ""
     module_summaries: []
-    rcars_overlap_pct: null
-    rcars_top_matches: []
+    rcars_overlap_pct: 90
+    rcars_top_matches:
+      - title: "Private Model as a Service - A Practical Guide to Red Hat AI"
+        ci_name: "published.private-maas-v3.prod"
+        url: "https://catalog.demo.redhat.com/catalog?item=published.private-maas-v3.prod"
+        relevance_score: 90
+        why_it_fits: "Covers MaaS platform configuration, foundation model deployment for inference, Grafana/Prometheus observability for model serving metrics, and integrating models into applications."
+        workloads:
+          - role: "ocp4_workload_authentication_keycloak"
+            collection: "agnosticd.core_workloads"
+          - role: "ocp4_workload_cert_manager"
+            collection: "agnosticd.core_workloads"
+          - role: "ocp4_workload_gitops_bootstrap"
+            collection: "agnosticd.core_workloads"
+          - role: "ocp4_workload_machinesets"
+            collection: "agnosticd.core_workloads"
+          - role: "ocp4_workload_openshift_gitops"
+            collection: "agnosticd.core_workloads"
+          - role: "ocp4_workload_showroom"
+            collection: "agnosticd.core_workloads"
+      - title: "AgentOps in Production — AI Observability on OpenShift"
+        ci_name: "published.agentops-ocp.prod"
+        url: "https://catalog.demo.redhat.com/catalog?item=published.agentops-ocp.prod"
+        relevance_score: 84
+        why_it_fits: "Covers monitoring model serving and LLM inference metrics through observability using Prometheus, Grafana, and MLflow on OpenShift AI."
+        workloads:
+          - role: "ocp4_workload_authentication"
+            collection: "agnosticd.core_workloads"
+          - role: "ocp4_workload_cert_manager"
+            collection: "agnosticd.core_workloads"
+          - role: "ocp4_workload_external_odf"
+            collection: "agnosticd.core_workloads"
+          - role: "ocp4_workload_gitops_bootstrap"
+            collection: "agnosticd.core_workloads"
+          - role: "ocp4_workload_litellm_virtual_keys"
+            collection: "rhpds.litellm_virtual_keys"
+          - role: "ocp4_workload_ocp_console_embed"
+            collection: "agnosticd.showroom"
+          - role: "ocp4_workload_openshift_gitops"
+            collection: "agnosticd.core_workloads"
+          - role: "ocp4_workload_showroom"
+            collection: "agnosticd.showroom"
+      - title: "LB2144: AI AgentOps OpenShift (AWS)"
+        ci_name: "summit-2026.lb2144-agentops-ocp-aws.prod"
+        url: "https://catalog.demo.redhat.com/catalog?item=summit-2026.lb2144-agentops-ocp-aws.prod"
+        relevance_score: 80
+        why_it_fits: "Covers LLM inference observability, Prometheus metrics, Grafana dashboards, and LLM evaluation frameworks on Red Hat OpenShift AI."
+        workloads:
+          - role: "ocp4_workload_authentication"
+            collection: "agnosticd.core_workloads"
+          - role: "ocp4_workload_cert_manager"
+            collection: "agnosticd.core_workloads"
+          - role: "ocp4_workload_gitops_bootstrap"
+            collection: "agnosticd.core_workloads"
+          - role: "ocp4_workload_litellm_virtual_keys"
+            collection: "rhpds.litellm_virtual_keys"
+          - role: "ocp4_workload_ocp_console_embed"
+            collection: "agnosticd.showroom"
+          - role: "ocp4_workload_openshift_gitops"
+            collection: "agnosticd.core_workloads"
+          - role: "ocp4_workload_showroom"
+            collection: "agnosticd.showroom"
     rejections: []
 
   infra:
