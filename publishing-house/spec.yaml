@@ -13,7 +13,7 @@ project:
   initiative_key: "rh1_2027"
   showroom_type: "classic"
   intake_type: "new"
-  automation_type: "gitops"
+  automation_type: "both"
   description: "A hands-on workshop experience taking attendees through the full inference lifecycle from model selection to large scale deployment."
   # content_reviewer_email and infra_reviewer_email are assigned by the RHDP team — not set by the author
   jira_ticket: "RHDPCD-1180"
@@ -62,14 +62,12 @@ spec:
 
     # --- OCP-specific fields (only when platform = ocp) ---
     ocp_version: "4.22"                # e.g. 4.20 — minimum 4.20; leave empty for rhel-vms
-    cluster_type: "multinode"          # sno | multinode — only for platform = ocp
-    control_plane_instance_count: 3    # 1 if sno, 3 if multinode
-    control_plane_cpu: 16              # 32 if sno, 16 if multinode
-    control_plane_ram_gb: 64           # 128 if sno, 64 if multinode
-    worker_count: 2                    # number of OCP worker nodes
-    worker_cpu: 16                     # vCPU per worker
-    worker_ram_gb: 64                  # RAM per worker in GB
-    worker_disk_gb: 100                # disk per worker in GB
+    cluster_type: "sno"          # sno | multinode — only for platform = ocp
+    control_plane_instance_count: 1    # 1 if sno, 3 if multinode
+    control_plane_cpu: 32              # 32 if sno, 16 if multinode
+    control_plane_ram_gb: 128           # 128 if sno, 64 if multinode
+    worker_count: 0                    # number of OCP worker nodes
+                # disk per worker in GB
 
     # --- VM-specific fields (only when platform = rhel-vms) ---
     # Each entry: {role, count, cpu, ram_gb, disk_gb, os}
@@ -87,7 +85,7 @@ spec:
       - "registry.redhat.io"
       - "quay.io"
     gpu_nodes: 1                       # number of GPU nodes (0 = none)
-    gpu_type: "NVIDIA L40"             # e.g. NVIDIA A100 40GB (required if gpu_nodes > 0)
+    gpu_type: "NVIDIA L4"             # e.g. NVIDIA A100 40GB (required if gpu_nodes > 0)
   duration_hours: 2
   audience: "intermediate"   # beginner | intermediate | advanced
 
