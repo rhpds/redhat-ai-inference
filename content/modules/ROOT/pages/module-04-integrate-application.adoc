@@ -1,0 +1,66 @@
+= Module 4: Integrate the Model into an Application
+:navtitle: 4. Integrate into an Application
+
+== Overview
+
+With the model exposed as a service, you now connect it to a consuming
+application. This module demonstrates how to integrate the
+Model-as-a-Service endpoint into an application using standard API
+patterns. You configure the application to call the model service, deploy
+it, and observe inference responses flowing through the integration.
+
+.Prerequisites
+Module 3 completed — model exposed as a MaaS with a reachable API endpoint.
+
+.Duration
+20 minutes
+
+== Learning Objectives
+
+* Integrate a model service into an application using standard API patterns
+* Configure application-side settings to consume the Model-as-a-Service endpoint
+
+== 4.1 — Review the Sample Application
+
+. Open the sample application source in the lab environment.
+. Identify where the application makes inference calls.
+
+TODO: Describe the application — what it does, what language/framework, where the inference call is made.
+
+== 4.2 — Configure the Application
+
+. Configure the application with the MaaS API endpoint URL from Module 3.
+. Configure the application with the API credentials generated in Module 3.
+
+[source,bash]
+----
+# TODO: show how to set env vars or config for the application
+----
+
+== 4.3 — Deploy the Application
+
+. Deploy the application to the OpenShift cluster.
+. Wait for the application pod to reach `Running` status.
+
+[source,bash]
+----
+# TODO: deploy command or console steps
+----
+
+== 4.4 — Send Requests and Observe Responses
+
+. Open the application interface.
+. Send a request that triggers an inference call to the model service.
+. Observe the response returned from the model through the application interface.
+. Confirm that the application is successfully consuming the Model-as-a-Service endpoint.
+
+== Key Takeaways
+
+* Standard API patterns (REST/OpenAI-compatible endpoints) make model services consumable by any application without custom integration code.
+* Application-side configuration requires the MaaS endpoint URL and valid API credentials.
+* The integration pattern used here is reusable for connecting any application to a model service on Red Hat AI Enterprise.
+
+'''
+
+xref:module-03-model-as-a-service.adoc[← Previous: Model-as-a-Service]
+xref:module-05-validate-workflow.adoc[Next: Validate the End-to-End Workflow →]

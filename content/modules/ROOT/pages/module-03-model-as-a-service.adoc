@@ -1,0 +1,65 @@
+= Module 3: Expose the Model as a Model-as-a-Service
+:navtitle: 3. Model-as-a-Service
+
+== Overview
+
+A deployed model that only one team can reach isn't enough for production
+use. This module walks you through configuring the deployed model as a
+Model-as-a-Service (MaaS), making it available for shared, scalable
+consumption across teams and applications. You configure access controls,
+API endpoints, and scaling policies to prepare the model for broader use.
+
+.Prerequisites
+Module 1 completed (model deployed); Module 2 completed (model evaluated).
+
+.Duration
+20 minutes
+
+== Learning Objectives
+
+* Configure a deployed model as a Model-as-a-Service for shared, scalable consumption
+* Manage access controls and API endpoint configuration for the model service
+
+== 3.1 — Review the Model-as-a-Service Approach
+
+TODO: Explain the MaaS concept — how it differs from a direct, single-team
+deployment and why it matters for production AI services.
+
+== 3.2 — Configure the Model as a Shared Service
+
+. Navigate to the model serving configuration for the deployed model.
+. Expose the model through a stable API endpoint.
+
+[source,bash]
+----
+# TODO: add commands or console steps to expose the model
+----
+
+== 3.3 — Configure Access Controls and API Endpoints
+
+. Configure access controls to define which users and teams can consume the model service.
+. Generate or retrieve API credentials for consuming the service.
+. Record the API endpoint URL and credentials — you will use these in Module 4.
+
+== 3.4 — Configure Scaling Policies
+
+. Configure scaling policies to handle multiple concurrent consumers.
+. Verify the API endpoint is externally reachable.
+
+[source,bash]
+----
+# TODO: test inference through the MaaS endpoint
+----
+
+. Confirm the test inference request succeeds.
+
+== Key Takeaways
+
+* Model-as-a-Service transforms a single-team model deployment into a shared, scalable resource available across the organization.
+* Access controls and API credentials govern who can consume the model service.
+* Scaling policies ensure the service can handle concurrent requests from multiple consumers.
+
+'''
+
+xref:module-02-evaluate-benchmark.adoc[← Previous: Evaluate with EvalHub]
+xref:module-04-integrate-application.adoc[Next: Integrate the Model into an Application →]

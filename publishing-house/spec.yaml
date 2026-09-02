@@ -33,27 +33,27 @@ spec:
     - id: module-01
       title: "Deploy a Model on Red Hat AI Enterprise"
       duration_min: 10
-      status: not_started
+      status: in_progress
     - id: module-02
       title: "Evaluate and Benchmark Model Performance with EvalHub"
       duration_min: 20
-      status: not_started
+      status: in_progress
     - id: module-03
       title: "Expose the Model as a Model-as-a-Service"
       duration_min: 20
-      status: not_started
+      status: in_progress
     - id: module-04
       title: "Integrate the Model into an Application"
       duration_min: 20
-      status: not_started
+      status: in_progress
     - id: module-05
       title: "Validate the End-to-End Workflow"
       duration_min: 20
-      status: not_started
+      status: in_progress
     - id: module-06
       title: "Monitor Model Performance through Observability"
       duration_min: 20
-      status: not_started
+      status: in_progress
   environment:
     platform: "ocp"            # ocp | rhel-vms — determines which sizing fields apply
     topology: "per-student"    # shared-cluster | per-student | cnv-pool
@@ -93,7 +93,7 @@ spec:
 development:
   automation:
     gitops:
-      status: not_started
+      status: in_progress
   e2e:
     status: not_started
   healthCheck:

@@ -1,0 +1,69 @@
+= Module 6: Monitor Model Performance through Observability
+:navtitle: 6. Monitor Performance
+
+== Overview
+
+A production AI service requires ongoing visibility into how the model
+performs under real usage. This module introduces the observability
+dashboard in Red Hat AI Enterprise and shows you how to monitor model
+serving metrics. You explore dashboards, observe key metrics under load,
+and analyze how serving behavior changes as the application sends requests
+to the model service.
+
+.Prerequisites
+Module 5 completed — end-to-end workflow validated; application actively
+sending requests to the model service.
+
+.Duration
+20 minutes
+
+== Learning Objectives
+
+* Monitor model serving metrics through the observability dashboard
+* Analyze serving behavior under load to identify performance trends
+
+== 6.1 — Explore the Observability Dashboard
+
+. Navigate to the observability dashboard in Red Hat AI Enterprise.
+. Locate the model serving metrics panel for the deployed model.
+. Review the available metrics:
+** Request rate
+** Latency (p50, p95, p99)
+** Throughput
+** Error rate
+** Resource utilization (CPU, memory, GPU)
+
+TODO: Add screenshot of the dashboard with annotations pointing to key panels.
+
+== 6.2 — Monitor Key Model Serving Metrics
+
+. Observe the current metric values reflecting traffic from the application.
+. Note the baseline values for latency, throughput, and error rate.
+
+== 6.3 — Generate Load and Observe Metric Changes
+
+. Send multiple concurrent requests through the application to generate load.
+. Monitor the dashboard as metrics update in response to the increased load.
+. Observe how latency and throughput change under higher request volume.
+
+[source,bash]
+----
+# TODO: add a load-generation command or script
+----
+
+== 6.4 — Analyze Performance Trends
+
+. Examine the relationship between request rate, latency, and resource utilization.
+. Identify any performance thresholds where serving behavior changes noticeably.
+. Review how these metrics would inform scaling policies and alerting thresholds in production.
+
+== Key Takeaways
+
+* The observability dashboard provides real-time visibility into model serving behavior — latency, throughput, error rate, and resource utilization.
+* Monitoring under load reveals how the model service responds to increased demand and where performance thresholds exist.
+* Serving metrics inform operational decisions: scaling policies, capacity planning, and alerting thresholds.
+
+'''
+
+xref:module-05-validate-workflow.adoc[← Previous: Validate End-to-End]
+xref:index.adoc[Back to Overview]

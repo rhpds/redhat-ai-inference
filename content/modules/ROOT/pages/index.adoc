@@ -1,5 +1,41 @@
-= My Lab Title
+= From Model to Model as a Service: Building Scalable AI Inference
+:navtitle: Lab Overview
 
-This project was created with the RHDP Publishing House template.
+== Welcome
 
-Run `/rhdp-publishing-house` in Claude Code to begin.
+In this hands-on lab you take a model through the full serving lifecycle
+on Red Hat AI Enterprise — from deployment and evaluation through
+Model-as-a-Service exposure, application integration, and observability.
+
+.Duration
+~2 hours (including ~10 min intro)
+
+.Audience
+AI engineers, platform engineers, and AI operations teams with basic
+OpenShift/Kubernetes knowledge and familiarity with AI model concepts.
+
+== What You Will Do
+
+[cols="1,4,1", options="header"]
+|===
+| Module | Title | Duration
+
+| 1 | xref:module-01-deploy-model.adoc[Deploy a Model on Red Hat AI Enterprise] | 10 min
+| 2 | xref:module-02-evaluate-benchmark.adoc[Evaluate and Benchmark Model Performance with EvalHub] | 20 min
+| 3 | xref:module-03-model-as-a-service.adoc[Expose the Model as a Model-as-a-Service] | 20 min
+| 4 | xref:module-04-integrate-application.adoc[Integrate the Model into an Application] | 20 min
+| 5 | xref:module-05-validate-workflow.adoc[Validate the End-to-End Workflow] | 20 min
+| 6 | xref:module-06-monitor-observability.adoc[Monitor Model Performance through Observability] | 20 min
+|===
+
+== Prerequisites
+
+* Basic understanding of containers and Kubernetes/OpenShift
+* Familiarity with generative AI model concepts (what a model is, what inference means)
+
+== Environment
+
+Your lab environment is a Red Hat AI Enterprise cluster. No models are
+pre-deployed — you build up the full serving lifecycle from scratch.
+
+TODO: Add access instructions — console URL, credentials, namespace.

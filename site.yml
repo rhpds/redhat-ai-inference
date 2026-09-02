@@ -1,7 +1,7 @@
 ---
 site:
-  title: My Project
-  url: https://github.com/rhpds/my-project
+  title: "From Model to Model as a Service: Building Scalable AI Inference"
+  url: https://github.com/rhpds/redhat-ai-inference
   start_page: modules::index.adoc
 
 content:

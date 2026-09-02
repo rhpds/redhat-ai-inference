@@ -1,5 +1,5 @@
 name: modules
-title: My Lab Title
+title: "From Model to Model as a Service: Building Scalable AI Inference"
 version: ~
 nav:
   - modules/ROOT/nav.adoc
@@ -9,3 +9,6 @@ asciidoc:
     experimental: true
     page-pagination: true
     guid: '%GUID%'
+    ssh_user: 'lab-user'
+    ssh_password: 'r3dh4t1!'
+    openshift_console_url: 'https://console-openshift-console.apps.cluster.example.com'

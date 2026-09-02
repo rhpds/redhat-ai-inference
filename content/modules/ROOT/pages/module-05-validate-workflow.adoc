@@ -1,0 +1,72 @@
+= Module 5: Validate the End-to-End Workflow
+:navtitle: 5. Validate End-to-End
+
+== Overview
+
+The model is deployed, evaluated, exposed as a service, and connected to
+an application. This module brings those pieces together by validating the
+end-to-end request flow. You trace a request from the application through
+the MaaS endpoint to the model and back, troubleshoot a simulated failure,
+and confirm that every component in the serving chain is working correctly.
+
+.Prerequisites
+Module 4 completed — application deployed and connected to the model service.
+
+.Duration
+20 minutes
+
+== Learning Objectives
+
+* Verify end-to-end request flow from application request to model response
+* Troubleshoot common issues in the serving chain between the application and the model
+
+== 5.1 — Trace a Request Through the Serving Chain
+
+. Send a request from the application interface and note the response.
+. Identify the full request path: application → MaaS endpoint → model server → model.
+. Inspect the application logs to confirm the outbound request was sent.
+
+[source,bash]
+----
+# TODO: command to view application logs
+----
+
+. Inspect the model server logs to confirm the inference request was received and processed.
+
+[source,bash]
+----
+# TODO: command to view model server logs
+----
+
+== 5.2 — Verify Each Component
+
+. Confirm the response at each layer matches expectations.
+. Document what a healthy trace looks like at each step.
+
+== 5.3 — Troubleshoot a Simulated Failure
+
+. Introduce a simulated failure — for example, set an invalid API credential.
+. Observe the error behavior in the application and in the model server logs.
+. Identify which component in the chain shows the failure.
+. Restore the correct configuration.
+
+[source,bash]
+----
+# TODO: steps to introduce and then revert the failure
+----
+
+== 5.4 — Confirm End-to-End Reliability
+
+. Send another request and confirm it succeeds end-to-end.
+. Verify the response matches the original baseline response.
+
+== Key Takeaways
+
+* End-to-end validation confirms that deployment, serving, access control, and application integration are all working together.
+* Tracing a request through the serving chain reveals where failures occur when something breaks.
+* Structured troubleshooting — checking logs at each layer — is essential for maintaining production AI services.
+
+'''
+
+xref:module-04-integrate-application.adoc[← Previous: Integrate into an Application]
+xref:module-06-monitor-observability.adoc[Next: Monitor Model Performance →]
