@@ -9,8 +9,10 @@ view_switcher:
   default_mode: split
 
 tabs:
-  - name: ">_ terminal"
-    path: /wetty
+  - name: Terminal
+    path: /terminal
     port: 443
-  - name: Placeholder
-    url: /placeholder
+  - name: OpenShift Console
+    url: "https://console-openshift-console.{{ openshift_cluster_ingress_domain }}"
+  - name: OpenShift AI
+    url: "https://rhods-dashboard-redhat-ods-applications.{{ openshift_cluster_ingress_domain }}"
