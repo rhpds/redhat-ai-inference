@@ -86,7 +86,7 @@ spec:
       - "registry.redhat.io"
       - "quay.io"
     gpu_nodes: 1                       # number of GPU nodes (0 = none)
-    gpu_type: "NVIDIA L4"             # e.g. NVIDIA A100 40GB (required if gpu_nodes > 0)
+    gpu_type: "g6.2xlarge"             # e.g. NVIDIA L4 (required if gpu_nodes > 0)
   duration_hours: 2
   audience: "intermediate"   # beginner | intermediate | advanced
 
