@@ -169,17 +169,17 @@ evalhub eval run \
   --provider lm_evaluation_harness \
   -b arc_easy -b truthfulqa_mc1 \
   --model-auth-secret model-auth \
-  --experiment gpt-oss-20b-baseline \
   --param num_examples=10 \
   --param tokenizer=openai/gpt-oss-20b
 ----
 
-The server accepts the job and returns a job ID, and logs the run to the
-MLflow experiment named by `--experiment` — it is created on first use.
-Without `--experiment` the run still completes and appears on the
-*Evaluations* page, but its metrics are never tracked in MLflow. Without the
-tokenizer parameter the job fails with `not a valid model identifier listed
-on huggingface.co` — always pass it for models served from a modelcar.
+The server accepts the job and returns a job ID, and logs the run to an
+MLflow experiment named after the evaluation — the run's metrics are tracked
+in MLflow automatically. Do not pass `--experiment`: the evaluation service
+resolves the experiment through MLflow on your behalf, and passing the flag
+fails the submission with a permission error. Without the tokenizer
+parameter the job fails with `not a valid model identifier listed on
+huggingface.co` — always pass it for models served from a modelcar.
 
 image::202d-eval-submitted.png[The evalhub CLI confirming the evaluation job was submitted with a job ID,link=self,window=blank,width=700]
 
@@ -329,8 +329,6 @@ model:
   name: redhataigpt-oss-20b-essential
   auth:
     secret_ref: model-auth
-experiment:
-  name: gpt-oss-20b-baseline
 benchmarks:
   - provider_id: lm_evaluation_harness
     id: arc_easy
@@ -346,7 +344,9 @@ benchmarks:
 
 Benchmark parameters live under each benchmark entry — the config file path
 has no global `--param` equivalent, so each benchmark carries the same
-`tokenizer` and `num_examples` the CLI passed inline.
+`tokenizer` and `num_examples` the CLI passed inline. No `experiment:`
+section — the run's metrics are tracked in MLflow automatically, and adding
+the experiment fails the submission with a permission error.
 
 Re-triggering the identical evaluation is then a single command:
 
@@ -374,9 +374,6 @@ labeling commands from Exercise 1 — they are idempotent.
 the worker node was under disk pressure when the pods tried to start. The
 jobs may recover on their own; re-run the evaluation once the node is
 healthy (`oc get nodes` shows `DiskPressure` in the conditions).
-* *`experiment ... is not active after create`* — an MLflow experiment with
-that name was deleted; MLflow does not reuse deleted experiment names. Pick
-a new experiment name.
 * *MaaS gateway 4 MiB request-body limit (RHOAIENG-99765)* — evaluation
 payloads routed through the gateway must stay under ~3.8 MB. Reduce
 `num_examples`, trim the dataset, or point the endpoint directly at the
