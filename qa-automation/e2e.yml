@@ -935,7 +935,7 @@
     # in Module 3.
     #
     # Credentials come from showroom user_data (agnosticv
-    # `_showroom_user_data.student_user` / `student_password`). The login
+    # `_showroom_user_data.lab_user_name` / `lab_user_password`). The login
     # writes to a SEPARATE kubeconfig so the ServiceAccount kubeconfig that
     # the rest of the play depends on for cluster-scoped reads is untouched.
     # Only the four MaaS API calls use this token; the Module 6 Prometheus
@@ -944,28 +944,45 @@
     - name: "M3 | Assert the lab-user credentials are available"
       ansible.builtin.assert:
         that:
-          - student_user is defined and (student_user | length) > 0
-          - student_password is defined and (student_password | length) > 0
+          - lab_user_name is defined and (lab_user_name | length) > 0
+          - lab_user_password is defined and (lab_user_password | length) > 0
         fail_msg: >-
-          student_user / student_password are not set. They are provided by
+          lab_user_name / lab_user_password are not set. They are provided by
           showroom user_data (agnosticv _showroom_user_data). For a manual
-          run, pass -e student_user=... -e student_password=...
+          run, pass -e lab_user_name=... -e lab_user_password=...
 
     - name: "M3 | Discover the API server URL for the lab-user login"
       ansible.builtin.command: oc whoami --show-server
       register: api_server
       changed_when: false
 
+    # `set -e` and the identity assertion are load-bearing, not belt-and-braces.
+    # Without them a failed `oc login` is silent: the shell carries on, oc finds
+    # no usable kubeconfig at KUBECONFIG, falls back to the pod's in-cluster
+    # ServiceAccount, and `oc whoami -t` returns the showroom SA's projected
+    # JWT with rc=0. The task then "succeeds" with the wrong identity and the
+    # failure only surfaces later as an opaque mint error. Observed live: a
+    # transient login failure produced a token whose sub was
+    # system:serviceaccount:lab-user-showroom:showroom. Fail here instead.
     - name: "M3 | Mint a lab-user token for the MaaS API calls (student path)"
       ansible.builtin.shell: |
+        set -e
         oc login "{{ api_server.stdout | trim }}" \
-          -u '{{ student_user }}' -p '{{ student_password }}' \
+          -u '{{ lab_user_name }}' -p '{{ lab_user_password }}' \
           --insecure-skip-tls-verify=true > /dev/null
+        WHOAMI=$(oc whoami)
+        if [ "$WHOAMI" != "{{ lab_user_name }}" ]; then
+          echo "expected to be {{ lab_user_name }} after login, got '$WHOAMI'" >&2
+          exit 1
+        fi
         oc whoami -t
       environment:
         KUBECONFIG: /tmp/student.kubeconfig
         K8S_AUTH_KUBECONFIG: /tmp/student.kubeconfig
       register: student_token
+      until: student_token.rc == 0
+      retries: 5
+      delay: 10
       changed_when: false
       no_log: true
 
