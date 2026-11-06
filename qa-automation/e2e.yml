@@ -103,6 +103,13 @@
   environment:
     KUBECONFIG: "{{ k8s_kubeconfig | default(omit) }}"
     K8S_AUTH_KUBECONFIG: "{{ k8s_kubeconfig | default(omit) }}"
+    # The evalhub CLI is bootstrapped into a private venv by the first M2 task
+    # (see that task for why a venv is required). PATH must be set at PLAY
+    # level, not inside the install task: `export PATH` in a shell module does
+    # not survive to the next task, and six later M2 tasks invoke bare
+    # `evalhub`. lookup('env', ...) is used rather than ansible_env because
+    # this play sets gather_facts: false, so ansible_env is undefined.
+    PATH: "/tmp/evalhub-venv/bin:{{ lookup('env', 'PATH') }}"
   vars:
     # -- Platform (M0 preflight) ----------------------------------------------
     # Chart-provided accelerator config the Module 1 deploy wizard selects
@@ -603,22 +610,31 @@
     #     at job creation, so this flow is immune; do not restart evalhub
     #     from this playbook (chart-owned resource)
 
-    - name: "M2 | VERIFY — evalhub CLI is installed (pip bootstrap if missing)"
+    # The CLI must go in a PRIVATE VENV. Both simpler options are impossible in
+    # the ZT runner (quay.io/rhpds/zerotouch-automation), verified on two
+    # clusters:
+    #   pip install --user  -> "Can not perform a '--user' install. User
+    #     site-packages are not visible in this virtualenv." The runner IS a
+    #     venv (sys.prefix=/opt/app-root, sys.base_prefix=/usr).
+    #   pip install (plain) -> eval-hub-sdk requires urllib3>=2.8.0; the image
+    #     ships urllib3 2.7.0 whose dist-info is owned root:root while the
+    #     container runs as uid 1000790000. pip can add files to site-packages
+    #     but cannot delete the root-owned dist-info to upgrade, so the install
+    #     aborts with EACCES.
+    # A venv gets its own urllib3 2.8.0 and sidesteps both. For the same reason
+    # qa-automation/requirements.txt does NOT work either: core/deps.py runs a
+    # plain `pip install -r` and hits the identical conflict, logging only a
+    # warning. PATH is exported at play level (see `environment:` above).
+    - name: "M2 | VERIFY — evalhub CLI is installed (private venv bootstrap)"
       ansible.builtin.shell: |
-        if command -v evalhub >/dev/null 2>&1; then
-          evalhub --version
-        else
-          python3 -m pip --version >/dev/null 2>&1 || {
-            curl -sSL https://bootstrap.pypa.io/get-pip.py -o /tmp/get-pip.py
-            python3 /tmp/get-pip.py --user
-          }
+        if [ ! -x /tmp/evalhub-venv/bin/evalhub ]; then
+          python3 -m venv /tmp/evalhub-venv
           # the [cli] extra is REQUIRED: click/packaging/pyyaml/rich ship in it
-          python3 -m pip install --user "eval-hub-sdk[cli]"
-          export PATH="$HOME/.local/bin:$PATH"
-          evalhub --version
+          /tmp/evalhub-venv/bin/pip install --quiet "eval-hub-sdk[cli]"
         fi
+        /tmp/evalhub-venv/bin/evalhub --version
       register: m2_cli
-      changed_when: "'install' in m2_cli.stdout | lower"
+      changed_when: false
 
     - name: "M2 | Discover the cluster apps domain"
       ansible.builtin.command: oc get ingresses.config.openshift.io cluster -o jsonpath='{.spec.domain}'
