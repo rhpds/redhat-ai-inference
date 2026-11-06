@@ -1,0 +1,26 @@
+# Workshop-level YAML for the redhat-ai-inference lab that is NOT under the
+# rhoai-cluster-pool GitOps control. Platform-level resources (DSCI/DSC, MaaS
+# gateway, RHOAI operators) belong to the pool overlay; everything here is
+# workshop/lab-scoped and applied manually with `oc apply -k`.
+#
+# Each file is annotated with the module / screenshot it unblocks.
+# NOTE: no global `namespace:` field — namespaces are explicit per resource.
+# The global namespace transformer renames Namespace-kind objects (ID conflict
+# with openshift-devspaces from devspaces.yaml) and would also rewrite the
+# devspaces OLM objects into lab-user-dev. Keep namespaces explicit in any
+# file added here (e.g. observability.yaml from the Module 6 task).
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - namespace-labels.yaml
+  - model-serviceaccount.yaml
+  - maas-chat-client.yaml
+  # maas-subscriptions.yaml MIGRATED to automation/gitops/maas-tier (ArgoCD
+  # `rhai-maas-tier` app, wave 6) — the MaaS governance tier is env-provisioned
+  # (learners have no RBAC in models-as-a-service), so it is GitOps-managed now.
+  # Do not re-add it here.
+  # TEMPLATED — substitute a freshly minted MaaS API key before enabling (see README.md):
+  # - maas-credentials-secret.yaml
+# devspaces.yaml and observability.yaml MIGRATED to the bootstrap-infra Helm
+# chart (automation/gitops/bootstrap-infra, ArgoCD `bootstrap` app) — do not
+# re-add them here, they are now GitOps-managed.

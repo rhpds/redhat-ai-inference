@@ -1,0 +1,18 @@
+# Node-level mirror for the RHOAI nightly operator images: the nightly FBC
+# references registry.redhat.io/rhoai/... bundle/operand images that only
+# exist on quay.io/rhoai. Applying this rolls every node (MachineConfig
+# update + reboot) — expected on first sync.
+{{- if .Values.catalog.enabled }}
+apiVersion: operator.openshift.io/v1alpha1
+kind: ImageContentSourcePolicy
+metadata:
+  name: quay-registry
+  annotations:
+    argocd.argoproj.io/sync-options: SkipDryRunOnMissingResource=true
+    argocd.argoproj.io/sync-wave: "-1"
+spec:
+  repositoryDigestMirrors:
+    - source: registry.redhat.io/rhoai
+      mirrors:
+        - quay.io/rhoai
+{{- end }}

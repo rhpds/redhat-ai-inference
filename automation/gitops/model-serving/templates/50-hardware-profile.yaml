@@ -1,0 +1,61 @@
+---
+# GPU-enabled hardware profile (module 1 — model deployments).
+#
+# RHOAI 3.6-ea2: the LLM deploy wizard's hardware profile provides the
+# resource identifiers — the serving-engine presets (LLMInferenceServiceConfig,
+# e.g. v3-6-0-ea-2-kserve-config-llm-single-node-template-nvidia-cuda) carry
+# ONLY the vLLM image with EMPTY resources, so the GPU request must come from
+# the profile. Without an Accelerator identifier the wizard's only profile was
+# cpu-only and the created LLMInferenceService requested 2 CPU / 4Gi with NO
+# nvidia.com/gpu — vLLM would never see the GPU.
+#
+# The kueue localQueueName is REQUIRED: the wizard only offers profiles with a
+# local queue to Kueue-managed projects ("Only hardware profiles configured
+# with a local queue are shown").
+#
+# Node placement: BOTH alternative paths are blocked — Kueue ResourceFlavor
+# taints are stripped by the RHOAI operator's queue management, and
+# scheduling.node.tolerations are rejected by the HardwareProfile CRD's CEL
+# validation ("When schedulingType is 'Queue' ... the 'node' field must not
+# be set"). The GPU node toleration is delivered by the custom accelerator
+# config instead: 50-accelerator-config.yaml (LLMInferenceServiceConfig with
+# opendatahub.io/config-type=accelerator) — the wizard lists it in its
+# Accelerator configuration dropdown and its template tolerations merge into
+# the created LLMInferenceService. The NVIDIA GPU operator taints GPU nodes
+# (nvidia.com/gpu=l4-gpu:NoSchedule) and re-applies the taint if removed.
+apiVersion: infrastructure.opendatahub.io/v1
+kind: HardwareProfile
+metadata:
+  annotations:
+    opendatahub.io/dashboard-feature-visibility: '[]'
+    opendatahub.io/disabled: "false"
+    opendatahub.io/display-name: GPU serving (NVIDIA GPU)
+    argocd.argoproj.io/sync-options: SkipDryRunOnMissingResource=true
+    argocd.argoproj.io/sync-wave: "2"
+  name: gpu-serving
+  namespace: redhat-ods-applications
+spec:
+  identifiers:
+  - defaultCount: 2
+    displayName: CPU
+    identifier: cpu
+    maxCount: 28
+    minCount: 1
+    resourceType: CPU
+  - defaultCount: 16Gi
+    displayName: Memory
+    identifier: memory
+    maxCount: 128Gi
+    minCount: 1Gi
+    resourceType: Memory
+  - defaultCount: 1
+    displayName: NVIDIA GPU
+    identifier: nvidia.com/gpu
+    maxCount: 1
+    minCount: 1
+    resourceType: Accelerator
+  scheduling:
+    kueue:
+      localQueueName: default
+      priorityClass: None
+    type: Queue

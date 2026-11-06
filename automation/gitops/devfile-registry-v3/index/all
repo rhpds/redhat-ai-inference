@@ -1,0 +1,18 @@
+[
+  {
+    "name": "maas-chat-client",
+    "version": "1.0.0",
+    "displayName": "Module 4: MaaS Chat Client",
+    "description": "Python workspace pre-loaded with the maas-chat-client sample application for Module 4 of the Red Hat AI Inference workshop.",
+    "type": "sample",
+    "tags": ["Python", "MaaS"],
+    "icon": "https://raw.githubusercontent.com/rhpds/redhat-ai-inference/main/automation/gitops/devfile-registry-v3/images/maas-chat-client.svg",
+    "language": "Python",
+    "projectType": "Python",
+    "resources": [],
+    "starterProjects": [],
+    "links": {
+      "self": "https://github.com/rhpds/redhat-ai-inference"
+    }
+  }
+]

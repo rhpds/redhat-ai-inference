@@ -1,64 +1,410 @@
-= Module 2: Evaluate and Benchmark Model Performance with EvalHub
+= Module 2: Evaluate Model Performance with EvalHub
 :navtitle: 2. Evaluate with EvalHub
+:toc: macro
+:toclevels: 1
+:imagesdir: ../assets/images
+
+toc::[]
 
 == Overview
 
 With a model deployed, you need to measure how well it performs before
-exposing it to consumers. This module introduces EvalHub — a feature of
-Red Hat AI Enterprise for running evaluations against deployed models.
-You run benchmark evaluations, analyze the results, and configure a
-repeatable evaluation workflow to track performance over time.
+exposing it to consumers. A model that has never been measured is a risk: you
+cannot make serving decisions — expose, scale, or tune — without a quality
+baseline. This module uses EvalHub, the evaluation service in Red Hat AI
+Enterprise, to benchmark the model you deployed in Module 1: you run
+evaluations from the CLI and the dashboard, analyze the scores, and make the
+evaluation repeatable so you can track performance over time.
 
 .Prerequisites
-Module 1 completed — model deployed and serving inference requests.
+Module 1 completed — the model is deployed and serving inference requests.
 
 .Duration
-20 minutes
+20 minutes (5 min setup / 7 min run / 4 min dashboard / 4 min compare)
 
-== Learning Objectives
+== Learning objectives
 
-* Analyze model inference performance using EvalHub for evaluations
-* Configure a repeatable evaluation workflow for tracking model performance over time
+* Run benchmark evaluations against a deployed model with the EvalHub CLI and
+the OpenShift AI dashboard
+* Analyze evaluation results and compare runs to track model performance over
+time
 
-== 2.1 — Explore EvalHub
+== Exercise 1: Set up the EvalHub CLI
 
-. Navigate to EvalHub within the Red Hat AI Enterprise console.
-. Review the available evaluation types and benchmark datasets.
+EvalHub runs each benchmark as an isolated job, tracks results through MLflow
+experiment tracking, and exposes a versioned REST API with a matching CLI.
+The lab's jumphost does not ship the CLI, so install it first.
 
-TODO: Add screenshot or description of the EvalHub interface.
+=== Install the EvalHub CLI
 
-== 2.2 — Run a Benchmark Evaluation
+The lab's jumphost does not ship the CLI — or `pip` — so bootstrap both. The
+CLI requires Python 3.11 or later:
 
-. Select the deployed model as the evaluation target.
-. Choose a benchmark dataset and configure evaluation parameters.
-. Run the benchmark evaluation against the deployed model.
-. Wait for the evaluation run to complete.
-
-[source,bash]
+[source,bash,role="execute"]
 ----
-# TODO: add any CLI commands for triggering evaluation
+python3 --version
+python3 -m pip --version
 ----
 
-== 2.3 — Analyze Evaluation Results
+If the second command reports a pip version, pip is available as a module and
+you can skip to the install. If it reports `No module named pip` (the lab
+jumphost), bootstrap pip into your home directory first — this needs no root
+access:
 
-. Review the evaluation results dashboard.
-. Examine key metrics: latency, throughput, and quality scores.
-. Compare results against baseline thresholds.
+[source,bash,role="execute"]
+----
+curl -sSL https://bootstrap.pypa.io/get-pip.py -o /tmp/get-pip.py
+python3 /tmp/get-pip.py --user
+export PATH=$HOME/.local/bin:$PATH
+----
 
-TODO: Describe what values are expected and how to interpret them.
+Then install the CLI. The CLI's dependencies (click, rich, pyyaml) ship as
+the `[cli]` extra, so install with the extra — a plain install leaves the CLI
+unimportable. The installer drops the `evalhub` binary in `~/.local/bin`, so
+make sure that directory is on your `PATH` (the `export` above) before
+running any `evalhub` command:
 
-== 2.4 — Configure a Repeatable Evaluation Workflow
+[source,bash,role="execute"]
+----
+python3 -m pip install --user "eval-hub-sdk[cli]"
+evalhub --version
+----
 
-. Save the evaluation configuration as a reusable workflow.
-. Verify the saved workflow can be triggered again to track performance changes over time.
+[NOTE]
+====
+If `pip install` fails with a network error, check the jumphost's outbound
+internet access — the install pulls the package and its dependencies from
+PyPI. All `evalhub` commands after the install talk only to the in-cluster
+EvalHub service.
+====
 
-== Key Takeaways
+=== Configure the CLI
 
-* EvalHub provides a structured way to benchmark and evaluate model inference performance directly within Red Hat AI Enterprise.
-* Evaluation results surface latency, throughput, and quality metrics that inform serving decisions.
-* A repeatable evaluation workflow enables teams to track model performance as configurations or models change.
+Point the CLI at the lab's EvalHub service. The tenant is your project
+namespace, and the token is your own OpenShift login token — once the
+project is registered as an evaluation tenant (next section), your user
+token is all the authorization you need:
+
+[source,bash,role="execute",subs="specialcharacters,attributes"]
+----
+evalhub config set base_url {evalhub_base_url}
+evalhub config set tenant {project_namespace}
+evalhub config set token $(oc whoami -t)
+evalhub config set insecure true
+evalhub health
+----
+
+`evalhub health` should report the service as healthy:
+
+image::201b-cli-health.png[The evalhub CLI reporting the EvalHub service as healthy,link=self,window=blank,width=700]
+
+The `insecure` setting disables CLI TLS verification. The wetty terminal is
+itself a pod, so the CLI auto-detects its ServiceAccount CA — the rhpds
+cluster's certificate — as the trust bundle, and the lab's Let's Encrypt
+certificate does not chain to it. Lab-only convenience: a production setup
+would point the client at the correct CA instead.
+
+=== Register the project as an evaluation tenant
+
+The EvalHub service only accepts evaluations from tenant namespaces.
+Registration is two labels on the project namespace, and the lab's RBAC
+grants the admin group label rights on this namespace only.
+`evalhub.trustyai.opendatahub.io/tenant` makes the EvalHub operator provision
+the job service account and RBAC in your project — including the service's
+read access to the model authentication secret created next.
+`opendatahub.io/generated-namespace` lets the evaluation pods' status
+callbacks through the default-deny network policy around the EvalHub
+service:
+
+[source,bash,role="execute",subs="specialcharacters,attributes"]
+----
+oc label namespace {project_namespace} evalhub.trustyai.opendatahub.io/tenant=true --overwrite
+oc label namespace {project_namespace} opendatahub.io/generated-namespace=true --overwrite
+----
+
+The `--overwrite` flag makes the commands idempotent — running them when the
+labels are already set is harmless. The operator watches for the tenant
+label and provisions the namespace's evaluation RBAC within seconds.
+Confirm both labels landed:
+
+[source,bash,role="execute",subs="specialcharacters,attributes"]
+----
+oc get namespace {project_namespace} --show-labels
+----
+
+=== Create the model authentication secret
+
+Evaluations call your model's inference endpoint, which requires the
+`Authorization: Bearer` token from Module 1. EvalHub reads model credentials
+from a Kubernetes secret in your project — create one that holds the token
+under the `api-key` key:
+
+[source,bash,role="execute"]
+----
+TOKEN=$(oc get secret model-tester-redhataigpt-oss-20b-essential-sa -o jsonpath='{.data.token}' | base64 -d)
+oc create secret generic model-auth --from-literal=api-key=$TOKEN
+----
+
+== Exercise 2: Run a benchmark evaluation
+
+A *benchmark* measures a specific capability: `arc_easy` scores grade-school
+science reasoning, `truthfulqa_mc1` scores resistance to common
+misconceptions. Both run against the OpenAI-compatible endpoint of your
+Module 1 model.
+
+=== Submit the evaluation
+
+Submit the evaluation with both benchmarks. The model URL is the gateway
+endpoint from Module 1, and the tokenizer parameter tells the evaluation
+runtime which tokenizer to use — the served model name is not a Hugging Face
+identifier, so the runtime cannot infer it:
+
+[source,bash,role="execute"]
+----
+MODEL_URL=$(oc get llminferenceservice redhataigpt-oss-20b-essential -o jsonpath='{.status.url}')
+evalhub eval run \
+  --name gpt-oss-20b-baseline \
+  --model-url $MODEL_URL/v1 \
+  --model-name redhataigpt-oss-20b-essential \
+  --provider lm_evaluation_harness \
+  -b arc_easy -b truthfulqa_mc1 \
+  --model-auth-secret model-auth \
+  --param num_examples=10 \
+  --param tokenizer=openai/gpt-oss-20b
+----
+
+The server accepts the job and returns a job ID, and logs the run to an
+MLflow experiment named after the evaluation — the run's metrics are tracked
+in MLflow automatically. Do not pass `--experiment`: the evaluation service
+resolves the experiment through MLflow on your behalf, and passing the flag
+fails the submission with a permission error. Without the tokenizer
+parameter the job fails with `not a valid model identifier listed on
+huggingface.co` — always pass it for models served from a modelcar.
+
+image::202d-eval-submitted.png[The evalhub CLI confirming the evaluation job was submitted with a job ID,link=self,window=blank,width=700]
+
+=== Monitor the run
+
+Each benchmark runs as an isolated Kubernetes job in your project. Watch the
+job progress:
+
+[source,bash,role="execute"]
+----
+evalhub eval status
+----
+
+[source,bash,role="execute"]
+----
+evalhub eval status --watch <job_id>
+----
+
+The job moves from `pending` (the pods are starting) to `running` to
+`completed`. Ten examples per benchmark completes in about a minute once the
+pods are up; larger samples take proportionally longer.
+
+=== View the results
+
+Retrieve the benchmark scores:
+
+[source,bash,role="execute"]
+----
+evalhub eval results <job_id> --format table
+----
+
+image::202e-eval-results.png[The evalhub CLI showing the benchmark results table with accuracy metrics for both benchmarks,link=self,window=blank,width=700]
+
+The `--format` flag supports `table`, `json`, `yaml`, and `csv`. The metrics
+depend on the benchmarks you ran: `acc` and `acc_norm` are multiple-choice
+accuracy (higher is better), `exact_match` scores math tasks. Ten examples
+gives a quick signal with high variance — treat these numbers as a baseline,
+not a verdict. The output also links the MLflow experiment where the run is
+tracked.
+
+== Exercise 3: Run an evaluation from the dashboard
+
+The OpenShift AI dashboard drives the same EvalHub service through the
+*Evaluations* page.
+
+=== Start an evaluation run
+
+. In the OpenShift AI dashboard, click *Develop & train → Evaluations*. The
+page lists the evaluation runs for the selected project.
++
+image::201-evaluations-page.png[The Evaluations page listing evaluation runs with name, status, benchmarks evaluated, model, date and result,link=self,window=blank,width=700]
+
+. Click *Start evaluation run*, select *Benchmark*, and pick `arc_easy` from
+the benchmark catalog (245 benchmarks across 12 categories — filter by name
+or category to find one).
+
+. Fill the run configuration:
++
+--
+* *Evaluation name*: a unique name, such as `gpt-oss-20b-recheck`.
+* *MLflow experiment*: accept the default — results are logged as runs
+within the experiment, named after the evaluation.
+* *Evaluating*: *Model*, then *Choose model* and select *Other (External
+endpoint)*.
+* *Model name*: `redhataigpt-oss-20b-essential` (case-sensitive).
+* *Endpoint URL*: the gateway endpoint from Exercise 2
+(`$MODEL_URL/v1`).
+* *Authentication secret name*: `model-auth`. Click *Validate connection* —
+the dashboard confirms the model is reachable.
+* *Benchmark parameters*: expand the section and enter the tokenizer, the
+same parameter the CLI required:
++
+
+[source,json]
+----
+{
+  "num_examples": 10,
+  "tokenizer": "openai/gpt-oss-20b"
+}
+----
+--
+. Click *Start evaluation run*.
++
+image::202-start-evaluation-run.png[The Start evaluation run form with the external endpoint configuration, validated connection and benchmark parameters,link=self,window=blank,width=700]
+
+=== Monitor progress and view results
+
+The evaluation appears in the runs list. Click the run name while it is
+running to watch progress: the *Progress* tab shows each benchmark moving
+from *In progress* to *Complete* with the elapsed time, and the *Events log*
+tab streams the job's status events.
+
+image::202b-run-in-progress.png[The evaluation run dialog showing progress with elapsed time and the benchmark tree in progress,link=self,window=blank,width=700]
+
+image::202c-run-events-log.png[The evaluation run dialog showing the benchmark status events in the events log,link=self,window=blank,width=700]
+
+When the run completes, click the run name to open the results view: the
+overall result, each benchmark's score against its pass threshold, and the
+MLflow tabs (model metrics, system metrics, traces, artifacts).
+
+image::203-evaluation-results.png[The evaluation results view showing the overall result, per-benchmark scores and pass status,link=self,window=blank,width=700]
+
+== Exercise 4: Compare runs and make it repeatable
+
+A one-off benchmark is a data point; a repeatable evaluation workflow is a
+baseline.
+
+=== Compare two runs
+
+. Run the evaluation a second time — from the CLI with a different
+`num_examples`, or from the dashboard as in Exercise 3.
+. On the *Evaluations* page, select the checkbox next to two completed runs
+and click *Compare*. The comparison view opens the embedded MLflow interface:
+a parallel-coordinates plot of parameters and metrics, with scatter, box, and
+contour views available. Expand each run to see its configuration, and use
+the filter to show only the parameters that differ.
++
+image::204-run-comparison.png[The comparison view comparing two evaluation runs with a parallel coordinates plot,link=self,window=blank,width=700]
+
+. The comparison view does not indicate whether a higher or lower metric
+value is better — interpret changes using your knowledge of each benchmark
+(`evalhub providers describe lm_evaluation_harness` lists every benchmark's
+category and metrics).
+
+=== Track results in MLflow
+
+Every evaluation run is logged to its MLflow experiment. Open *Develop & train
+→ Experiments*, select the experiment, and switch to *Evaluation runs*: each
+benchmark's run appears with its metrics (`acc`, `acc_norm`,
+`overall_score`), ready for side-by-side comparison across model versions and
+configuration changes.
+
+image::205-mlflow-experiments.png[The MLflow experiment page showing evaluation runs with metric columns,link=self,window=blank,width=700]
+
+=== Save the evaluation as a config file
+
+The evaluation can be expressed as a YAML file that you version and re-run
+after any change — a new model version, different runtime arguments, or a
+different serving configuration:
+
+[source,yaml,subs="specialcharacters,attributes"]
+----
+# evaljob.yaml — repeatable evaluation configuration
+name: gpt-oss-20b-baseline
+model:
+  url: {inference_gateway_url}/{project_namespace}/redhataigpt-oss-20b-essential/v1
+  name: redhataigpt-oss-20b-essential
+  auth:
+    secret_ref: model-auth
+benchmarks:
+  - provider_id: lm_evaluation_harness
+    id: arc_easy
+    parameters:
+      num_examples: 10
+      tokenizer: openai/gpt-oss-20b
+  - provider_id: lm_evaluation_harness
+    id: truthfulqa_mc1
+    parameters:
+      num_examples: 10
+      tokenizer: openai/gpt-oss-20b
+----
+
+Benchmark parameters live under each benchmark entry — the config file path
+has no global `--param` equivalent, so each benchmark carries the same
+`tokenizer` and `num_examples` the CLI passed inline. No `experiment:`
+section — the run's metrics are tracked in MLflow automatically, and adding
+the experiment fails the submission with a permission error.
+
+Re-triggering the identical evaluation is then a single command:
+
+[source,bash,role="execute"]
+----
+evalhub eval run --config evaljob.yaml
+----
+
+image::204b-config-run.png[The evalhub CLI confirming the repeatable evaluation was submitted from the config file,link=self,window=blank,width=700]
+
+== Troubleshooting
+
+* *Job fails with `not a valid model identifier listed on huggingface.co`* —
+the tokenizer parameter is missing. Pass `--param
+tokenizer=openai/gpt-oss-20b` (CLI), add it under
+*Benchmark parameters* (dashboard), or under each benchmark's
+`parameters` in the config file.
+* *Run marked `Failed` immediately with `reading model auth secret ...
+forbidden`, or stays `Pending` forever while the benchmark jobs complete* —
+the project namespace is not registered as an evaluation tenant (the
+`evalhub.trustyai.opendatahub.io/tenant` and
+`opendatahub.io/generated-namespace` labels are missing). Re-run the
+labeling commands from Exercise 1 — they are idempotent.
+* *Run marked `Failed` with `pod unschedulable` shortly after submission* —
+the worker node was under disk pressure when the pods tried to start. The
+jobs may recover on their own; re-run the evaluation once the node is
+healthy (`oc get nodes` shows `DiskPressure` in the conditions).
+* *MaaS gateway 4 MiB request-body limit (RHOAIENG-99765)* — evaluation
+payloads routed through the gateway must stay under ~3.8 MB. Reduce
+`num_examples`, trim the dataset, or point the endpoint directly at the
+model's internal cluster endpoint.
+
+== Module summary
+
+**What you accomplished:**
+
+* Installed and configured the EvalHub CLI against the lab's evaluation
+service.
+* Ran benchmark evaluations against the deployed model from the CLI and the
+dashboard, and read the benchmark scores.
+* Compared two runs in the MLflow comparison view and saved the evaluation as
+a repeatable config file.
+
+**Key takeaways:**
+
+* EvalHub benchmarks a deployed model through isolated, parallel evaluation
+jobs, with results tracked in MLflow.
+* Benchmark scores are a baseline to compare against — interpret changes per
+benchmark, since the comparison view does not flag metric direction.
+* A repeatable evaluation config turns a one-off benchmark into a quality
+gate you can re-run after every change.
+
+**Next steps:**
+
+With a measured quality baseline in hand, continue to
+xref:module-03-model-as-a-service.adoc[Module 3] to expose the model as a
+shared Model-as-a-Service.
 
 '''
 
-xref:module-01-deploy-model.adoc[← Previous: Deploy a Model]
-xref:module-03-model-as-a-service.adoc[Next: Expose the Model as a Model-as-a-Service →]
+xref:module-01-deploy-model.adoc[← Previous] | xref:module-03-model-as-a-service.adoc[Next: Expose as Model-as-a-Service →]

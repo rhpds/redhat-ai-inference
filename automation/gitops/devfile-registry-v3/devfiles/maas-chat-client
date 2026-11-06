@@ -1,0 +1,28 @@
+schemaVersion: 2.2.0
+metadata:
+  name: maas-chat-client
+  displayName: "Module 4: MaaS Chat Client"
+  description: "Python workspace pre-loaded with the maas-chat-client sample application for Module 4 of the Red Hat AI Inference workshop."
+attributes:
+  che-code.eclipse.org/vscode-preferences:
+    security.workspace.trust.enabled: false
+components:
+  - name: maas-client-tools
+    container:
+      # Red Hat's Universal Developer Image (the same image the built-in Dev
+      # Spaces samples use): oc, python3, curl, git, jq preinstalled, and
+      # built for the che-code entrypoint hook. Third-party images (e.g.
+      # ubi9/python-311) fail the hook with FailedPostStartHook.
+      image: registry.redhat.io/devspaces/udi-rhel9:latest
+      memoryLimit: 4Gi
+      memoryRequest: 1Gi
+      cpuRequest: 1000m
+      mountSources: true
+      sourceMapping: /projects
+projects:
+  - name: redhat-ai-inference
+    git:
+      remotes:
+        origin: https://github.com/rhpds/redhat-ai-inference.git
+      checkoutFrom:
+        revision: main

@@ -1,0 +1,103 @@
+---
+apiVersion: kuadrant.io/v1beta1
+kind: Kuadrant
+metadata:
+  name: kuadrant
+  namespace: kuadrant-system
+  annotations:
+    argocd.argoproj.io/sync-options: SkipDryRunOnMissingResource=true
+    argocd.argoproj.io/sync-wave: "2"
+spec:
+  observability:
+    enable: true
+---
+apiVersion: v1
+kind: Service
+metadata:
+  annotations:
+    service.beta.openshift.io/serving-cert-secret-name: authorino-server-cert
+    argocd.argoproj.io/sync-options: SkipDryRunOnMissingResource=true
+    argocd.argoproj.io/sync-wave: "2"
+  name: authorino-authorino-authorization
+  namespace: kuadrant-system
+spec:
+  internalTrafficPolicy: Cluster
+  ipFamilies:
+  - IPv4
+  ipFamilyPolicy: SingleStack
+  ports:
+  - name: grpc
+    port: 50051
+    protocol: TCP
+    targetPort: 50051
+  - name: http
+    port: 5001
+    protocol: TCP
+    targetPort: 5001
+  selector:
+    authorino-resource: authorino
+    control-plane: controller-manager
+  sessionAffinity: None
+  type: ClusterIP
+status:
+  loadBalancer: {}
+---
+apiVersion: operator.authorino.kuadrant.io/v1beta1
+kind: Authorino
+metadata:
+  name: authorino
+  namespace: kuadrant-system
+  annotations:
+    argocd.argoproj.io/sync-options: SkipDryRunOnMissingResource=true
+    argocd.argoproj.io/sync-wave: "2"
+spec:
+  replicas: 1
+  clusterWide: true
+  listener:
+    tls:
+      enabled: true
+      certSecretRef:
+        name: authorino-server-cert
+  logLevel: debug
+  oidcServer:
+    tls:
+      enabled: false
+---
+# The Authorino operator creates these two ClusterRoleBindings when it
+# reconciles the Authorino CR, but with ArgoCD prune they are wiped on every
+# sync (cluster-scoped objects outside the app manifest are pruned). Declared
+# here so ArgoCD owns them instead. Without them the authenticator cannot do
+# TokenReview, and every OpenShift-token request through the MaaS gateway
+# fails with 401 — including the dashboard's API-keys page.
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: authorino-authorino
+  annotations:
+    argocd.argoproj.io/sync-options: SkipDryRunOnMissingResource=true
+    argocd.argoproj.io/sync-wave: "2"
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: authorino-manager-role
+subjects:
+- kind: ServiceAccount
+  name: authorino-authorino
+  namespace: kuadrant-system
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: authorino-authorino-k8s-auth
+  annotations:
+    argocd.argoproj.io/sync-options: SkipDryRunOnMissingResource=true
+    argocd.argoproj.io/sync-wave: "2"
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: authorino-manager-k8s-auth-role
+subjects:
+- kind: ServiceAccount
+  name: authorino-authorino
+  namespace: kuadrant-system

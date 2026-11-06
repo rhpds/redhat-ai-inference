@@ -1,0 +1,157 @@
+# Postgres for the MaaS controller DB + the maas-db-config secret it reads
+# (wave 1 — exists before the DSC's aigateway module starts the controller).
+# Credentials are dummy lab-internal values (pool pattern, see values.yaml).
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: postgres-creds
+  namespace: redhat-ods-applications
+  annotations:
+    argocd.argoproj.io/sync-options: SkipDryRunOnMissingResource=true
+    argocd.argoproj.io/sync-wave: "1"
+  labels:
+    app: postgres
+stringData:
+  POSTGRES_USER: {{ .Values.postgres.user | quote }}
+  POSTGRES_PASSWORD: {{ .Values.postgres.password | quote }}
+  POSTGRES_DB: {{ .Values.postgres.db | quote }}
+  # The postgres superuser password — the evalhub-db-init Job connects as the
+  # postgres superuser to create the evalhub database (POSTGRESQL_USER lacks
+  # CREATEDB in the RHEL postgres image).
+  POSTGRESQL_ADMIN_PASSWORD: {{ .Values.postgres.password | quote }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: postgres
+  namespace: redhat-ods-applications
+  annotations:
+    argocd.argoproj.io/sync-options: SkipDryRunOnMissingResource=true
+    argocd.argoproj.io/sync-wave: "1"
+  labels:
+    app: postgres
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: postgres
+  template:
+    metadata:
+      labels:
+        app: postgres
+    spec:
+      containers:
+      - name: postgres
+        image: registry.redhat.io/rhel9/postgresql-16:latest
+        env:
+        - name: POSTGRESQL_USER
+          valueFrom:
+            secretKeyRef:
+              name: postgres-creds
+              key: POSTGRES_USER
+        - name: POSTGRESQL_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: postgres-creds
+              key: POSTGRES_PASSWORD
+        - name: POSTGRESQL_DATABASE
+          valueFrom:
+            secretKeyRef:
+              name: postgres-creds
+              key: POSTGRES_DB
+        - name: POSTGRESQL_ADMIN_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: postgres-creds
+              key: POSTGRESQL_ADMIN_PASSWORD
+        ports:
+        - containerPort: 5432
+        volumeMounts:
+        - name: data
+          mountPath: /var/lib/pgsql/data
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "100m"
+          limits:
+            memory: "512Mi"
+            cpu: "500m"
+        readinessProbe:
+          exec:
+            command: ["/usr/libexec/check-container"]
+          initialDelaySeconds: 5
+          periodSeconds: 5
+      volumes:
+      - name: data
+        persistentVolumeClaim:
+          claimName: postgres-data
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: postgres-data
+  namespace: redhat-ods-applications
+  annotations:
+    argocd.argoproj.io/sync-options: SkipDryRunOnMissingResource=true
+    argocd.argoproj.io/sync-wave: "1"
+  labels:
+    app: postgres
+spec:
+  accessModes:
+  - ReadWriteOnce
+  resources:
+    requests:
+      storage: 5Gi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres
+  namespace: redhat-ods-applications
+  annotations:
+    argocd.argoproj.io/sync-options: SkipDryRunOnMissingResource=true
+    argocd.argoproj.io/sync-wave: "1"
+  labels:
+    app: postgres
+spec:
+  selector:
+    app: postgres
+  ports:
+  - port: 5432
+    targetPort: 5432
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: maas-db-config
+  namespace: redhat-ods-applications
+  annotations:
+    argocd.argoproj.io/sync-options: SkipDryRunOnMissingResource=true
+    argocd.argoproj.io/sync-wave: "1"
+  labels:
+    app: maas-api
+stringData:
+  DB_CONNECTION_URL: "postgresql://{{ .Values.postgres.user }}:{{ .Values.postgres.password }}@postgres:5432/{{ .Values.postgres.db }}?sslmode=disable"
+---
+# The rhoai-catalog-nightly MaaS tenant config (MaasTenantConfig) reads the
+# controller DB secret from the aigateway infra namespace, NOT
+# redhat-ods-applications: "database Secret 'maas-db-config' not found in
+# namespace 'redhat-ai-gateway-infra'" — without it the tenant stays
+# PrerequisitesNotMet, the model-serving-api never gets its gateway route,
+# and https://maas.<domain>/maas-api/v1/api-keys 404s. The URL is
+# cross-namespace: the postgres service lives in redhat-ods-applications.
+# The redhat-ai-gateway-infra namespace is created by the DSC aigateway
+# module (wave 1), before this chart (wave 3) applies.
+apiVersion: v1
+kind: Secret
+metadata:
+  name: maas-db-config
+  namespace: redhat-ai-gateway-infra
+  annotations:
+    argocd.argoproj.io/sync-options: SkipDryRunOnMissingResource=true
+    argocd.argoproj.io/sync-wave: "1"
+  labels:
+    app: maas-api
+stringData:
+  DB_CONNECTION_URL: "postgresql://{{ .Values.postgres.user }}:{{ .Values.postgres.password }}@postgres.redhat-ods-applications.svc.cluster.local:5432/{{ .Values.postgres.db }}?sslmode=disable"
