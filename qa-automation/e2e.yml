@@ -58,7 +58,8 @@
 #   - The app-of-apps charts (automation/gitops/) synced by ArgoCD — the M0
 #     preflight verifies the chart-provided signals before Module 1
 #   - oc logged in with credentials that can manage the student project
-#   - jq installed (used to parse MaaS API responses)
+#   - python3 (used to parse MaaS API responses; jq is NOT present in
+#     the ZT runner image quay.io/rhpds/zerotouch-automation)
 #   - Model and serving images pre-pulled (RAC risk mitigation — keeps the
 #     Module 1 cold start inside the retry window; on a cluster where they
 #     are NOT pre-pulled, the Module 1 polling retries are sized for it)
@@ -917,18 +918,78 @@
       ansible.builtin.set_fact:
         maas_url: "https://maas.{{ cluster_domain.stdout | trim }}"
 
+    # ---------------------------------------------------------------------
+    # MaaS API calls must be made as the LAB USER, not as the QA runner's
+    # ServiceAccount.
+    #
+    # The maas-tier chart scopes the subscription owner to the group
+    # `system:authenticated:oauth`. The runner executes as the showroom
+    # `runtime-automation` ServiceAccount, which is in
+    # `system:serviceaccounts:*` and matches no owner group. Verified live on
+    # three clusters, same subscription and endpoint:
+    #   runtime-automation SA -> 400 invalid_subscription (never resolved)
+    #   lab-user1 (OAuth)     -> subscription IS resolved (403 while the tier
+    #                            is still Failed pre-Module-1, 201 once Active)
+    # So the gate is OAuth group membership, not privilege level. Minting as
+    # the lab user is both the correct fix and what the student actually does
+    # in Module 3.
+    #
+    # Credentials come from showroom user_data (agnosticv
+    # `_showroom_user_data.student_user` / `student_password`). The login
+    # writes to a SEPARATE kubeconfig so the ServiceAccount kubeconfig that
+    # the rest of the play depends on for cluster-scoped reads is untouched.
+    # Only the four MaaS API calls use this token; the Module 6 Prometheus
+    # federate deliberately keeps the ServiceAccount identity.
+    # ---------------------------------------------------------------------
+    - name: "M3 | Assert the lab-user credentials are available"
+      ansible.builtin.assert:
+        that:
+          - student_user is defined and (student_user | length) > 0
+          - student_password is defined and (student_password | length) > 0
+        fail_msg: >-
+          student_user / student_password are not set. They are provided by
+          showroom user_data (agnosticv _showroom_user_data). For a manual
+          run, pass -e student_user=... -e student_password=...
+
+    - name: "M3 | Discover the API server URL for the lab-user login"
+      ansible.builtin.command: oc whoami --show-server
+      register: api_server
+      changed_when: false
+
+    - name: "M3 | Mint a lab-user token for the MaaS API calls (student path)"
+      ansible.builtin.shell: |
+        oc login "{{ api_server.stdout | trim }}" \
+          -u '{{ student_user }}' -p '{{ student_password }}' \
+          --insecure-skip-tls-verify=true > /dev/null
+        oc whoami -t
+      environment:
+        KUBECONFIG: /tmp/student.kubeconfig
+        K8S_AUTH_KUBECONFIG: /tmp/student.kubeconfig
+      register: student_token
+      changed_when: false
+      no_log: true
+
     - name: "M3 | Mint a MaaS API key against the maas-free-subscription tier"
       ansible.builtin.shell: |
         curl -sSk -X POST "{{ maas_url }}/maas-api/v1/api-keys" \
-          -H "Authorization: Bearer $(oc whoami -t)" \
+          -H "Authorization: Bearer {{ student_token.stdout | trim }}" \
           -H "Content-Type: application/json" \
-          -d '{"name":"e2e-key-'$RANDOM'","expiresIn":"1h","subscription":"{{ maas_subscription_name }}"}' | jq -r .key
+          -d '{"name":"e2e-key-'$RANDOM'","expiresIn":"1h","subscription":"{{ maas_subscription_name }}"}' \
+          | python3 -c 'import json,sys; print(json.load(sys.stdin)["key"])'
       register: maas_api_key
       until:
         maas_api_key.rc == 0 and
         maas_api_key.stdout | trim | length > 0 and
         maas_api_key.stdout | trim != 'null'
-      retries: 5
+      # maas-api lags the MaaSSubscription's Ready condition. Measured on a
+      # live cluster: Ready=True at 11:52:47Z, mint attempts over
+      # 11:53:00-11:54:15Z all failed, the identical request at 11:55:30Z
+      # returned 201. The preceding VERIFY task only waits for the CR
+      # condition, so this is the first call that actually exercises
+      # maas-api's view of the tier and must absorb that propagation gap.
+      # 5x15s (75s) was too short; 20x15s gives ~5 min, matching the
+      # MaaSModelRef poll above.
+      retries: 20
       delay: 15
       changed_when: false
       no_log: true
@@ -1008,7 +1069,7 @@
       ansible.builtin.shell: |
         RESPONSE=$(curl -sSk "{{ maas_url }}/v1/models" \
           -H "Authorization: Bearer {{ maas_api_key.stdout | trim }}")
-        echo "$RESPONSE" | jq -e '[.data[]? | select(.ready==true and (.id | contains("{{ model_name }}")))] | length > 0'
+        echo "$RESPONSE" | python3 -c 'import json,sys; d=json.load(sys.stdin); sys.exit(0 if [m for m in d.get("data",[]) if m.get("ready") and "{{ model_name }}" in m.get("id","")] else 1)'
       register: result
       until: result.rc == 0
       retries: 10
@@ -1224,7 +1285,7 @@
     - name: "M5-Ex3 | Mint a throwaway MaaS API key for the revoke test"
       ansible.builtin.shell: |
         curl -sSk -X POST "{{ maas_url }}/maas-api/v1/api-keys" \
-          -H "Authorization: Bearer $(oc whoami -t)" \
+          -H "Authorization: Bearer {{ student_token.stdout | trim }}" \
           -H "Content-Type: application/json" \
           -d '{"name":"e2e-revoke-'$RANDOM'","expiresIn":"1h","subscription":"{{ maas_subscription_name }}"}'
       register: revoke_mint
@@ -1243,7 +1304,7 @@
       # the key return 403.
       ansible.builtin.shell: |
         curl -sSk -X DELETE "{{ maas_url }}/maas-api/v1/api-keys/{{ (revoke_mint.stdout | from_json).id }}" \
-          -H "Authorization: Bearer $(oc whoami -t)"
+          -H "Authorization: Bearer {{ student_token.stdout | trim }}"
       register: revoke_call
       changed_when: true
       no_log: true
@@ -1288,10 +1349,10 @@
     - name: "M5-Ex3 | Fix — restore the app with a fresh key (module-05 Ex 3 revert)"
       ansible.builtin.shell: |
         curl -sSk -X POST "{{ maas_url }}/maas-api/v1/api-keys" \
-          -H "Authorization: Bearer $(oc whoami -t)" \
+          -H "Authorization: Bearer {{ student_token.stdout | trim }}" \
           -H "Content-Type: application/json" \
           -d '{"name":"e2e-restore-'$RANDOM'","expiresIn":"1h","subscription":"{{ maas_subscription_name }}"}' \
-          | jq -r .key > /tmp/e2e-restore-key.txt
+          | python3 -c 'import json,sys; print(json.load(sys.stdin)["key"])' > /tmp/e2e-restore-key.txt
         oc patch secret {{ app_secret }} -n {{ project_name }} --type merge \
           -p "{\"stringData\":{\"MAAS_API_KEY\":\"$(cat /tmp/e2e-restore-key.txt)\"}}"
         rm -f /tmp/e2e-restore-key.txt
