@@ -971,40 +971,71 @@
     # Only the four MaaS API calls use this token; the Module 6 Prometheus
     # federate deliberately keeps the ServiceAccount identity.
     # ---------------------------------------------------------------------
+    - name: "M3 | Resolve the OpenShift student username from Showroom user data"
+      # Showroom's runner can overwrite the exported student_user with the
+      # bastion username. The mounted data still has the explicit OAuth user.
+      ansible.builtin.set_fact:
+        m3_student_user: >-
+          {{ maas_student_user | default(showroom_data.get('student_user')
+          | default(student_user | default(''), true), true) | trim }}
+      vars:
+        showroom_data: >-
+          {{ (lookup('ansible.builtin.file', '/user_data/user_data.yml', errors='ignore')
+          | default('{}', true) | from_yaml) or {} }}
+      no_log: true
+
     - name: "M3 | Assert the lab-user credentials are available"
       ansible.builtin.assert:
         that:
-          - student_user is defined and (student_user | length) > 0
+          - m3_student_user | length > 0
+          - m3_student_user != 'test_user_name'
           - student_password is defined and (student_password | length) > 0
         fail_msg: >-
-          student_user / student_password are not set. They are provided by
-          showroom user_data (agnosticv _showroom_user_data). For a manual
-          run, pass -e student_user=... -e student_password=...
+          A real OAuth student username and password are required. Check the
+          mounted Showroom student_user and student_password values. For a
+          manual run, pass student_user and student_password as extra vars.
 
     - name: "M3 | Discover the API server URL for the lab-user login"
-      ansible.builtin.command: oc whoami --show-server
+      ansible.builtin.command: oc --request-timeout=10s whoami --show-server
       register: api_server
       changed_when: false
+      failed_when: api_server.rc != 0 or not (api_server.stdout | trim).startswith('https://')
 
-    - name: "M3 | Mint a lab-user token for the MaaS API calls (student path)"
-      ansible.builtin.shell: |
-        oc login "{{ api_server.stdout | trim }}" \
-          -u '{{ student_user }}' -p '{{ student_password }}' \
-          --insecure-skip-tls-verify=true > /dev/null
-        oc whoami -t
-      environment:
-        KUBECONFIG: /tmp/student.kubeconfig
-        K8S_AUTH_KUBECONFIG: /tmp/student.kubeconfig
-      register: student_token
-      changed_when: false
-      no_log: true
+    - name: "M3 | Authenticate as the lab user; never fall back to the runner identity"
+      block:
+        - name: "M3 | Mint a lab-user token for the MaaS API calls (student path)"
+          ansible.builtin.shell: |
+            set -eu
+            umask 077
+            student_config=$(mktemp)
+            trap 'rm -f "$student_config"' EXIT
+            oc --kubeconfig="$student_config" --request-timeout=20s login "$STUDENT_API_SERVER" \
+              -u "$STUDENT_LOGIN_USER" -p "$STUDENT_LOGIN_PASSWORD" \
+              --insecure-skip-tls-verify=true >/dev/null
+            test "$(oc --kubeconfig="$student_config" --request-timeout=10s whoami)" = "$STUDENT_LOGIN_USER"
+            oc --kubeconfig="$student_config" --request-timeout=10s whoami -t
+          environment:
+            STUDENT_API_SERVER: "{{ api_server.stdout | trim }}"
+            STUDENT_LOGIN_USER: "{{ m3_student_user }}"
+            STUDENT_LOGIN_PASSWORD: "{{ student_password }}"
+          register: student_token
+          changed_when: false
+          no_log: true
+      rescue:
+        - name: "M3 | Report the student login failure without exposing credentials"
+          ansible.builtin.fail:
+            msg: >-
+              Could not authenticate as the configured lab user against the
+              OpenShift API. Check the Showroom student_user and
+              student_password values and OAuth availability. No MaaS key
+              request was made with the Showroom service account.
 
     - name: "M3 | Mint a MaaS API key against the maas-free-subscription tier"
       ansible.builtin.shell: |
-        curl -sSk -X POST "{{ maas_url }}/maas-api/v1/api-keys" \
+        curl -fsSk --connect-timeout 5 --max-time 20 -X POST "{{ maas_url }}/maas-api/v1/api-keys" \
           -H "Authorization: Bearer {{ student_token.stdout | trim }}" \
           -H "Content-Type: application/json" \
-          -d '{"name":"e2e-key-'$RANDOM'","expiresIn":"1h","subscription":"{{ maas_subscription_name }}"}' \
+          -d '{"name":"e2e-key-{{ 999999999 | random }}","expiresIn":"1h","subscription":"{{ maas_subscription_name }}"}' \
           | python3 -c 'import json,sys; print(json.load(sys.stdin)["key"])'
       register: maas_api_key
       until:
