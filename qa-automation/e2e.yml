@@ -11,9 +11,10 @@
 #   automated here — they are covered by the manual checklists in
 #   qa/runs/redhat-ai-inference/ and noted below where they are skipped.
 #
-# Idempotent:
-#   Safe to re-run on a cluster where a previous run partially or fully
-#   completed. The project and ServiceAccount are created if missing, the
+# Rerunnable:
+#   Reconciles lab resources on a cluster where a previous run partially or
+#   fully completed. Benchmarks and short-lived keys are fresh per run.
+#   The project and ServiceAccount are created if missing, the
 #   LLMInferenceService / MaaSModelRef / ConfigMap / Secret / Deployment are
 #   applied (no-op when unchanged), the MaaSModelRef is only created when not
 #   already published, and the API key is minted with a unique name. The
@@ -41,10 +42,12 @@
 #     exercise the request loop via oc exec
 #   - Module 5: Component verification (model server + gateway + app healthy),
 #     the model server metrics scrape (vLLM series), and the credential-
-#     failure negative test (revoke the app's API key via the MaaS API →
-#     the app fails 403 → mint a new key and restore)
+#     failure negative test (revoke a throwaway key, use it to reproduce
+#     the app's 401/403, then restore the working key)
 #   - Module 6: User workload monitoring and observability dashboard checks,
-#     including the vLLM series check via the UWM Prometheus federate API
+#     including the vLLM series check via the UWM Prometheus federate API.
+#     The learner's 30-request burst and dashboard trend analysis are not
+#     covered by this check.
 #
 # When to run:
 #   - After lab content changes to verify instructions still work
@@ -58,7 +61,8 @@
 #   - The app-of-apps charts (automation/gitops/) synced by ArgoCD — the M0
 #     preflight verifies the chart-provided signals before Module 1
 #   - oc logged in with credentials that can manage the student project
-#   - jq installed (used to parse MaaS API responses)
+#   - python3 (used to parse MaaS API responses; jq is NOT present in
+#     the ZT runner image quay.io/rhpds/zerotouch-automation)
 #   - Model and serving images pre-pulled (RAC risk mitigation — keeps the
 #     Module 1 cold start inside the retry window; on a cluster where they
 #     are NOT pre-pulled, the Module 1 polling retries are sized for it)
@@ -103,6 +107,13 @@
   environment:
     KUBECONFIG: "{{ k8s_kubeconfig | default(omit) }}"
     K8S_AUTH_KUBECONFIG: "{{ k8s_kubeconfig | default(omit) }}"
+    # The evalhub CLI is bootstrapped into a private venv by the first M2 task
+    # (see that task for why a venv is required). PATH must be set at PLAY
+    # level, not inside the install task: `export PATH` in a shell module does
+    # not survive to the next task, and six later M2 tasks invoke bare
+    # `evalhub`. lookup('env', ...) is used rather than ansible_env because
+    # this play sets gather_facts: false, so ansible_env is undefined.
+    PATH: "/tmp/evalhub-venv/bin:{{ lookup('env', 'PATH') }}"
   vars:
     # -- Platform (M0 preflight) ----------------------------------------------
     # Chart-provided accelerator config the Module 1 deploy wizard selects
@@ -521,11 +532,32 @@
       retries: 30
       delay: 30
 
-    - name: "M1 | Get the model serving endpoint URL"
+    - name: "M1 | Get the inference gateway advertised hostnames"
+      kubernetes.core.k8s_info:
+        api_version: gateway.networking.k8s.io/v1
+        kind: Gateway
+        namespace: openshift-ingress
+        name: openshift-ai-inference
+      register: m1_gateway
+      until: >-
+        m1_gateway.resources | length > 0 and
+        (m1_gateway.resources[0].status.addresses | default([])
+        | selectattr('type', 'equalto', 'Hostname') | list | length > 0)
+      retries: 12
+      delay: 5
+
+    - name: "M1 | Poll for the inference gateway URL (a rerun may still report the MaaS URL)"
       ansible.builtin.command: >-
-        oc get llminferenceservice {{ model_name }} -n {{ project_name }}
+        oc --request-timeout=10s get llminferenceservice {{ model_name }} -n {{ project_name }}
         -o jsonpath='{.status.url}'
       register: model_url
+      until: >-
+        model_url.rc == 0 and
+        (model_url.stdout | trim | urlsplit('hostname')) in
+        (m1_gateway.resources[0].status.addresses | default([])
+        | selectattr('type', 'equalto', 'Hostname') | map(attribute='value') | list)
+      retries: 30
+      delay: 5
       changed_when: false
 
     - name: "M1 | Mint a model-tester token for inference requests"
@@ -603,22 +635,31 @@
     #     at job creation, so this flow is immune; do not restart evalhub
     #     from this playbook (chart-owned resource)
 
-    - name: "M2 | VERIFY — evalhub CLI is installed (pip bootstrap if missing)"
+    # The CLI must go in a PRIVATE VENV. Both simpler options are impossible in
+    # the ZT runner (quay.io/rhpds/zerotouch-automation), verified on two
+    # clusters:
+    #   pip install --user  -> "Can not perform a '--user' install. User
+    #     site-packages are not visible in this virtualenv." The runner IS a
+    #     venv (sys.prefix=/opt/app-root, sys.base_prefix=/usr).
+    #   pip install (plain) -> eval-hub-sdk requires urllib3>=2.8.0; the image
+    #     ships urllib3 2.7.0 whose dist-info is owned root:root while the
+    #     container runs as uid 1000790000. pip can add files to site-packages
+    #     but cannot delete the root-owned dist-info to upgrade, so the install
+    #     aborts with EACCES.
+    # A venv gets its own urllib3 2.8.0 and sidesteps both. For the same reason
+    # qa-automation/requirements.txt does NOT work either: core/deps.py runs a
+    # plain `pip install -r` and hits the identical conflict, logging only a
+    # warning. PATH is exported at play level (see `environment:` above).
+    - name: "M2 | VERIFY — evalhub CLI is installed (private venv bootstrap)"
       ansible.builtin.shell: |
-        if command -v evalhub >/dev/null 2>&1; then
-          evalhub --version
-        else
-          python3 -m pip --version >/dev/null 2>&1 || {
-            curl -sSL https://bootstrap.pypa.io/get-pip.py -o /tmp/get-pip.py
-            python3 /tmp/get-pip.py --user
-          }
+        if [ ! -x /tmp/evalhub-venv/bin/evalhub ]; then
+          python3 -m venv /tmp/evalhub-venv
           # the [cli] extra is REQUIRED: click/packaging/pyyaml/rich ship in it
-          python3 -m pip install --user "eval-hub-sdk[cli]"
-          export PATH="$HOME/.local/bin:$PATH"
-          evalhub --version
+          /tmp/evalhub-venv/bin/pip install --quiet "eval-hub-sdk[cli]"
         fi
+        /tmp/evalhub-venv/bin/evalhub --version
       register: m2_cli
-      changed_when: "'install' in m2_cli.stdout | lower"
+      changed_when: false
 
     - name: "M2 | Discover the cluster apps domain"
       ansible.builtin.command: oc get ingresses.config.openshift.io cluster -o jsonpath='{.spec.domain}'
@@ -653,7 +694,7 @@
       no_log: true
       changed_when: true
 
-    - name: "M2 | Submit the benchmark evaluation and wait (module-02 Ex 2)"
+    - name: "M2 | Submit and poll the benchmark evaluation (module-02 Ex 2)"
       # NOTE: no --experiment flag. The server-side get-or-create experiment
       # call fails with MLflow 403 PERMISSION_DENIED (the evalhub server's
       # ServiceAccount has no RBAC in the tenant namespace; verified live on
@@ -671,6 +712,10 @@
           --param num_examples=10 \
           --param tokenizer=openai/gpt-oss-20b \
           --wait --timeout 900 --format json
+      # The CLI is silent until it returns JSON. Ansible emits an ASYNC POLL
+      # update to Showroom every 10 seconds without resubmitting the evaluation.
+      async: 930
+      poll: 10
       register: eval_run
       changed_when: true
 
@@ -746,9 +791,11 @@
         mode: "0644"
       changed_when: true
 
-    - name: "M2 | Ex 4 — submit the config-file evaluation and wait"
+    - name: "M2 | Ex 4 — submit and poll the config-file evaluation"
       ansible.builtin.shell: |
         evalhub eval run --config /tmp/evaljob-e2e.yaml --wait --timeout 900 --format json
+      async: 930
+      poll: 10
       register: eval_config_run
       changed_when: true
 
@@ -901,18 +948,109 @@
       ansible.builtin.set_fact:
         maas_url: "https://maas.{{ cluster_domain.stdout | trim }}"
 
+    # ---------------------------------------------------------------------
+    # MaaS API calls must be made as the LAB USER, not as the QA runner's
+    # ServiceAccount.
+    #
+    # The maas-tier chart scopes the subscription owner to the group
+    # `system:authenticated:oauth`. The runner executes as the showroom
+    # `runtime-automation` ServiceAccount, which is in
+    # `system:serviceaccounts:*` and matches no owner group. Verified live on
+    # three clusters, same subscription and endpoint:
+    #   runtime-automation SA -> 400 invalid_subscription (never resolved)
+    #   lab-user1 (OAuth)     -> subscription IS resolved (403 while the tier
+    #                            is still Failed pre-Module-1, 201 once Active)
+    # So the gate is OAuth group membership, not privilege level. Minting as
+    # the lab user is both the correct fix and what the student actually does
+    # in Module 3.
+    #
+    # Credentials come from showroom user_data (agnosticv
+    # `_showroom_user_data.student_user` / `student_password`). The login
+    # writes to a SEPARATE kubeconfig so the ServiceAccount kubeconfig that
+    # the rest of the play depends on for cluster-scoped reads is untouched.
+    # Only the four MaaS API calls use this token; the Module 6 Prometheus
+    # federate deliberately keeps the ServiceAccount identity.
+    # ---------------------------------------------------------------------
+    - name: "M3 | Resolve the OpenShift student username from Showroom user data"
+      # Showroom's runner can overwrite the exported student_user with the
+      # bastion username. The mounted data still has the explicit OAuth user.
+      ansible.builtin.set_fact:
+        m3_student_user: >-
+          {{ maas_student_user | default(showroom_data.get('student_user')
+          | default(student_user | default(''), true), true) | trim }}
+      vars:
+        showroom_data: >-
+          {{ (lookup('ansible.builtin.file', '/user_data/user_data.yml', errors='ignore')
+          | default('{}', true) | from_yaml) or {} }}
+      no_log: true
+
+    - name: "M3 | Assert the lab-user credentials are available"
+      ansible.builtin.assert:
+        that:
+          - m3_student_user | length > 0
+          - m3_student_user != 'test_user_name'
+          - student_password is defined and (student_password | length) > 0
+        fail_msg: >-
+          A real OAuth student username and password are required. Check the
+          mounted Showroom student_user and student_password values. For a
+          manual run, pass student_user and student_password as extra vars.
+
+    - name: "M3 | Discover the API server URL for the lab-user login"
+      ansible.builtin.command: oc --request-timeout=10s whoami --show-server
+      register: api_server
+      changed_when: false
+      failed_when: api_server.rc != 0 or not (api_server.stdout | trim).startswith('https://')
+
+    - name: "M3 | Authenticate as the lab user; never fall back to the runner identity"
+      block:
+        - name: "M3 | Mint a lab-user token for the MaaS API calls (student path)"
+          ansible.builtin.shell: |
+            set -eu
+            umask 077
+            student_config=$(mktemp)
+            trap 'rm -f "$student_config"' EXIT
+            oc --kubeconfig="$student_config" --request-timeout=20s login "$STUDENT_API_SERVER" \
+              -u "$STUDENT_LOGIN_USER" -p "$STUDENT_LOGIN_PASSWORD" \
+              --insecure-skip-tls-verify=true >/dev/null
+            test "$(oc --kubeconfig="$student_config" --request-timeout=10s whoami)" = "$STUDENT_LOGIN_USER"
+            oc --kubeconfig="$student_config" --request-timeout=10s whoami -t
+          environment:
+            STUDENT_API_SERVER: "{{ api_server.stdout | trim }}"
+            STUDENT_LOGIN_USER: "{{ m3_student_user }}"
+            STUDENT_LOGIN_PASSWORD: "{{ student_password }}"
+          register: student_token
+          changed_when: false
+          no_log: true
+      rescue:
+        - name: "M3 | Report the student login failure without exposing credentials"
+          ansible.builtin.fail:
+            msg: >-
+              Could not authenticate as the configured lab user against the
+              OpenShift API. Check the Showroom student_user and
+              student_password values and OAuth availability. No MaaS key
+              request was made with the Showroom service account.
+
     - name: "M3 | Mint a MaaS API key against the maas-free-subscription tier"
       ansible.builtin.shell: |
-        curl -sSk -X POST "{{ maas_url }}/maas-api/v1/api-keys" \
-          -H "Authorization: Bearer $(oc whoami -t)" \
+        curl -fsSk --connect-timeout 5 --max-time 20 -X POST "{{ maas_url }}/maas-api/v1/api-keys" \
+          -H "Authorization: Bearer {{ student_token.stdout | trim }}" \
           -H "Content-Type: application/json" \
-          -d '{"name":"e2e-key-'$RANDOM'","expiresIn":"1h","subscription":"{{ maas_subscription_name }}"}' | jq -r .key
+          -d '{"name":"e2e-key-{{ 999999999 | random }}","expiresIn":"1h","subscription":"{{ maas_subscription_name }}"}' \
+          | python3 -c 'import json,sys; print(json.load(sys.stdin)["key"])'
       register: maas_api_key
       until:
         maas_api_key.rc == 0 and
         maas_api_key.stdout | trim | length > 0 and
         maas_api_key.stdout | trim != 'null'
-      retries: 5
+      # maas-api lags the MaaSSubscription's Ready condition. Measured on a
+      # live cluster: Ready=True at 11:52:47Z, mint attempts over
+      # 11:53:00-11:54:15Z all failed, the identical request at 11:55:30Z
+      # returned 201. The preceding VERIFY task only waits for the CR
+      # condition, so this is the first call that actually exercises
+      # maas-api's view of the tier and must absorb that propagation gap.
+      # 5x15s (75s) was too short; 20x15s gives ~5 min, matching the
+      # MaaSModelRef poll above.
+      retries: 20
       delay: 15
       changed_when: false
       no_log: true
@@ -922,50 +1060,76 @@
     # SchedulingGated while the first keeps serving — nothing is lost. On a
     # multi-GPU cluster the second pod comes up Running the same way.
 
-    - name: "M3-Ex4 | Scale the model to two replicas"
-      ansible.builtin.command: >-
-        oc patch llminferenceservice {{ model_name }} -n {{ project_name }}
-        --type merge -p '{"spec":{"replicas":2}}'
-      changed_when: true
+    - name: "M3-Ex4 | Exercise Kueue gating and always restore one replica"
+      block:
+        - name: "M3-Ex4 | Scale the model to two replicas"
+          ansible.builtin.command: >-
+            oc patch llminferenceservice {{ model_name }} -n {{ project_name }}
+            --type merge -p '{"spec":{"replicas":2}}'
+          changed_when: true
 
-    - name: "M3-Ex4 | Polling for the second replica to be Kueue-gated (retries expected)"
-      # Kueue gates the pod via schedulingGates + the PodScheduled condition
-      # (reason=SchedulingGated). pod.status.reason is NOT set on this
-      # kubelet (v1.35.8), and conditions like Ready=True omit the reason
-      # field entirely — so the leaf access must be tolerant (map + default).
-      kubernetes.core.k8s_info:
-        api_version: v1
-        kind: Pod
-        namespace: "{{ project_name }}"
-      register: scale_pods
-      until: >-
-        scale_pods.resources
-        | selectattr('metadata.name', 'match', '^' ~ model_name)
-        | map(attribute='status.conditions')
-        | flatten
-        | selectattr('type', 'equalto', 'PodScheduled')
-        | map(attribute='reason', default='')
-        | select('equalto', 'SchedulingGated')
-        | list | length >= 1
-      retries: 20
-      delay: 10
+        - name: "M3-Ex4 | Polling for the second replica to be Kueue-gated (retries expected)"
+          # Kueue gates the pod via schedulingGates + the PodScheduled condition
+          # (reason=SchedulingGated). pod.status.reason is NOT set on this
+          # kubelet (v1.35.8), and conditions like Ready=True omit the reason
+          # field entirely — so the leaf access must be tolerant (map + default).
+          kubernetes.core.k8s_info:
+            api_version: v1
+            kind: Pod
+            namespace: "{{ project_name }}"
+          register: scale_pods
+          until: >-
+            scale_pods.resources
+            | selectattr('metadata.name', 'match', '^' ~ model_name)
+            | map(attribute='status.conditions')
+            | flatten
+            | selectattr('type', 'equalto', 'PodScheduled')
+            | map(attribute='reason', default='')
+            | select('equalto', 'SchedulingGated')
+            | list | length >= 1
+          retries: 20
+          delay: 10
 
-    - name: "M3-Ex4 | VERIFY — the first replica keeps serving while the second is gated"
-      kubernetes.core.k8s_info:
-        api_version: v1
-        kind: Pod
-        namespace: "{{ project_name }}"
-      register: gated_pods
-      failed_when: >-
-        gated_pods.resources
-        | selectattr('metadata.name', 'match', '^' ~ model_name)
-        | selectattr('status.phase', 'equalto', 'Running') | list | length != 1
+        - name: "M3-Ex4 | VERIFY — the first replica is still running while the second is gated"
+          kubernetes.core.k8s_info:
+            api_version: v1
+            kind: Pod
+            namespace: "{{ project_name }}"
+          register: gated_pods
+          failed_when: >-
+            gated_pods.resources
+            | selectattr('metadata.name', 'match', '^' ~ model_name)
+            | selectattr('status.phase', 'equalto', 'Running') | list | length != 1
 
-    - name: "M3-Ex4 | Scale the model back to one replica"
-      ansible.builtin.command: >-
-        oc patch llminferenceservice {{ model_name }} -n {{ project_name }}
-        --type merge -p '{"spec":{"replicas":1}}'
-      changed_when: true
+        - name: "M3-Ex4 | VERIFY — MaaS inference works while the second replica is gated"
+          ansible.builtin.uri:
+            url: "{{ maas_url }}/v1/chat/completions"
+            method: POST
+            headers:
+              Authorization: "Bearer {{ maas_api_key.stdout | trim }}"
+            body_format: json
+            body:
+              model: "publishers/{{ project_name }}/models/{{ model_name }}"
+              messages:
+                - role: user
+                  content: "Reply with the single word OK."
+              max_tokens: 64
+            validate_certs: false
+            status_code: 200
+          register: m3_gated_chat
+          until: >-
+            m3_gated_chat.status | default(0) == 200 and
+            m3_gated_chat.json.choices | default([]) | length > 0
+          retries: 5
+          delay: 10
+          no_log: true
+      always:
+        - name: "M3-Ex4 | Scale the model back to one replica"
+          ansible.builtin.command: >-
+            oc patch llminferenceservice {{ model_name }} -n {{ project_name }}
+            --type merge -p '{"spec":{"replicas":1}}'
+          changed_when: true
+
 
     - name: "M3-Ex4 | Polling for the gated replica to be removed"
       kubernetes.core.k8s_info:
@@ -992,7 +1156,7 @@
       ansible.builtin.shell: |
         RESPONSE=$(curl -sSk "{{ maas_url }}/v1/models" \
           -H "Authorization: Bearer {{ maas_api_key.stdout | trim }}")
-        echo "$RESPONSE" | jq -e '[.data[]? | select(.ready==true and (.id | contains("{{ model_name }}")))] | length > 0'
+        echo "$RESPONSE" | python3 -c 'import json,sys; d=json.load(sys.stdin); sys.exit(0 if [m for m in d.get("data",[]) if m.get("ready") and "{{ model_name }}" in m.get("id","")] else 1)'
       register: result
       until: result.rc == 0
       retries: 10
@@ -1208,7 +1372,7 @@
     - name: "M5-Ex3 | Mint a throwaway MaaS API key for the revoke test"
       ansible.builtin.shell: |
         curl -sSk -X POST "{{ maas_url }}/maas-api/v1/api-keys" \
-          -H "Authorization: Bearer $(oc whoami -t)" \
+          -H "Authorization: Bearer {{ student_token.stdout | trim }}" \
           -H "Content-Type: application/json" \
           -d '{"name":"e2e-revoke-'$RANDOM'","expiresIn":"1h","subscription":"{{ maas_subscription_name }}"}'
       register: revoke_mint
@@ -1227,7 +1391,7 @@
       # the key return 403.
       ansible.builtin.shell: |
         curl -sSk -X DELETE "{{ maas_url }}/maas-api/v1/api-keys/{{ (revoke_mint.stdout | from_json).id }}" \
-          -H "Authorization: Bearer $(oc whoami -t)"
+          -H "Authorization: Bearer {{ student_token.stdout | trim }}"
       register: revoke_call
       changed_when: true
       no_log: true
@@ -1247,48 +1411,47 @@
       changed_when: false
       no_log: true
 
-    - name: "M5-Ex3 | Break the app's credential (patch the maas-credentials Secret)"
-      # The module revokes the APP's key; the API equivalent for the e2e is
-      # replacing the Secret's key with the revoked one — the app then
-      # observes the same 403 the module describes.
-      ansible.builtin.shell: |
-        oc patch secret {{ app_secret }} -n {{ project_name }} --type merge \
-          -p '{"stringData":{"MAAS_API_KEY":"{{ (revoke_mint.stdout | from_json).key }}"}}'
-      no_log: true
-      changed_when: true
+    - name: "M5-Ex3 | Test the revoked key and always restore the working app credential"
+      block:
+        - name: "M5-Ex3 | Break the app's credential (patch the maas-credentials Secret)"
+          # The module revokes the APP's key; the API equivalent for the e2e is
+          # replacing the Secret's key with the revoked one — the app then
+          # observes the same 403 the module describes.
+          ansible.builtin.shell: |
+            oc patch secret {{ app_secret }} -n {{ project_name }} --type merge \
+              -p '{"stringData":{"MAAS_API_KEY":"{{ (revoke_mint.stdout | from_json).key }}"}}'
+          no_log: true
+          changed_when: true
 
-    - name: "M5-Ex3 | Roll out the app with the revoked key"
-      ansible.builtin.command: oc rollout restart deploy/{{ app_name }} -n {{ project_name }}
-      changed_when: true
+        - name: "M5-Ex3 | Roll out the app with the revoked key"
+          ansible.builtin.command: oc rollout restart deploy/{{ app_name }} -n {{ project_name }}
+          changed_when: true
 
-    - name: "M5-Ex3 | Polling for the app to fail with HTTP 403 (module-05 Ex 3)"
-      ansible.builtin.command: oc logs deployment/{{ app_name }} -c chat-client -n {{ project_name }} --tail=20
-      register: m5_fail_logs
-      until: "'HTTP 403' in m5_fail_logs.stdout or 'HTTP 401' in m5_fail_logs.stdout"
-      retries: 20
-      delay: 15
-      changed_when: false
+        - name: "M5-Ex3 | Polling for the app to fail with HTTP 403 (module-05 Ex 3)"
+          ansible.builtin.command: oc logs deployment/{{ app_name }} -c chat-client -n {{ project_name }} --tail=20
+          register: m5_fail_logs
+          until: "'HTTP 403' in m5_fail_logs.stdout or 'HTTP 401' in m5_fail_logs.stdout"
+          retries: 20
+          delay: 15
+          changed_when: false
+      always:
+        - name: "M5-Ex3 | Restore the working Module 3 key"
+          kubernetes.core.k8s:
+            state: patched
+            definition:
+              apiVersion: v1
+              kind: Secret
+              metadata:
+                name: "{{ app_secret }}"
+                namespace: "{{ project_name }}"
+              stringData:
+                MAAS_API_KEY: "{{ maas_api_key.stdout | trim }}"
+          no_log: true
 
-    - name: "M5-Ex3 | Fix — restore the app with a fresh key (module-05 Ex 3 revert)"
-      ansible.builtin.shell: |
-        curl -sSk -X POST "{{ maas_url }}/maas-api/v1/api-keys" \
-          -H "Authorization: Bearer $(oc whoami -t)" \
-          -H "Content-Type: application/json" \
-          -d '{"name":"e2e-restore-'$RANDOM'","expiresIn":"1h","subscription":"{{ maas_subscription_name }}"}' \
-          | jq -r .key > /tmp/e2e-restore-key.txt
-        oc patch secret {{ app_secret }} -n {{ project_name }} --type merge \
-          -p "{\"stringData\":{\"MAAS_API_KEY\":\"$(cat /tmp/e2e-restore-key.txt)\"}}"
-        rm -f /tmp/e2e-restore-key.txt
-      register: m5_restore
-      until: m5_restore.rc == 0 and (m5_restore.stdout | trim | length) > 0
-      retries: 5
-      delay: 15
-      changed_when: true
-      no_log: true
+        - name: "M5-Ex3 | Roll out the app with the working key"
+          ansible.builtin.command: oc rollout restart deploy/{{ app_name }} -n {{ project_name }}
+          changed_when: true
 
-    - name: "M5-Ex3 | Roll out the app with the fresh key"
-      ansible.builtin.command: oc rollout restart deploy/{{ app_name }} -n {{ project_name }}
-      changed_when: true
 
     - name: "M5-Ex3 | Polling for the app to recover (module-05 Ex 3 revert)"
       ansible.builtin.command: >-
