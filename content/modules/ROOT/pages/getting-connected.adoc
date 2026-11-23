@@ -37,7 +37,7 @@ These credentials are scoped to your lab environment — do not share them.
 +
 [source,bash,role="execute",subs="attributes"]
 ----
-oc login {openshift_api_server_url} -u {user} -p {password} --insecure-skip-tls-verify=true
+oc login {openshift_api_server_url} -u {student_user} -p {student_password} --insecure-skip-tls-verify=true
 ----
 
 == Cluster environment
