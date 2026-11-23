@@ -23,8 +23,8 @@ terminal with the lab credentials provided for your environment:
 
 [source,subs="attributes+"]
 ----
-Username: {user}
-Password: {password}
+Username: {student_user}
+Password: {student_password}
 ----
 
 These credentials are scoped to your lab environment — do not share them.
